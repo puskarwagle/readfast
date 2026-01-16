@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speed Reader</title>
+    <link rel="stylesheet" href="readfast.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+    <!-- Book Selection Modal -->
+    <div id="book-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Select a Book</h2>
+                <button class="close-btn" id="close-modal">&times;</button>
+            </div>
+            <div id="loading-books" class="loading">Loading books...</div>
+            <div id="books-grid" class="books-grid"></div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <p>Extracting text from PDF...</p>
+    </div>
+
+    <div id="text-container">
+        <div id="flowing-text-wrapper">
+            <div id="flowing-text"></div>
+        </div>
+        <div id="focal-point"></div>
+        <div id="resize-handle"></div>
+    </div>
+
+    <div id="controls">
+        <div class="controls-wrapper">
+            <button id="select-book-btn" class="control-btn" title="Select Book">
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor" d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/>
+                </svg>
+            </button>
+            <div class="slider-container">
+                <div class="wpm-display"><span id="wpm-value">250</span> WPM</div>
+                <input type="range" id="speed-slider" min="100" max="600" step="50" value="250">
+            </div>
+            <button id="play-pause-btn">
+                <svg id="play-icon" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                </svg>
+                <svg id="pause-icon" style="display: none;" viewBox="0 0 24 24">
+                    <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Set PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+    <script src="readfast.js"></script>
+</body>
+</html>

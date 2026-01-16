@@ -1,0 +1,12 @@
+node_modules/
+.DS_Store
+*.log
+.gemini/
+package-lock.json
+
+# Ignore everything in books/ but keep sample.pdf
+books/*
+!books/sample.pdf
+
+# Ignore myadhd folder
+myadhd/
