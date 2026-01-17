@@ -174,7 +174,8 @@ class RenderEngine {
       displayArea: document.getElementById('display-area'),
       container: document.getElementById('main-container'),
       playPauseBtn: document.getElementById('play-pause'),
-      currentWordAria: document.getElementById('current-word')
+      currentWordAria: document.getElementById('current-word'),
+      pageInfo: document.getElementById('readfast-page-info')
     };
 
     if (!this.elements.displayArea) {
@@ -332,6 +333,9 @@ class RenderEngine {
         this.elements.currentWordAria.textContent = focusWordData.word;
       }
 
+      // Update page info
+      this.updatePageInfo(currentFocusIndex);
+
       const focusLinePastWords = [];
       const focusLineFutureWords = [];
 
@@ -460,6 +464,19 @@ class RenderEngine {
       this.elements.playPauseBtn.textContent = isPlaying ? '⏸' : '▶';
     }
   }
+
+  updatePageInfo(currentWordIndex) {
+    if (!this.elements.pageInfo) return;
+
+    const totalWords = this.metrics.getWordCount();
+
+    // Calculate approximate page (assuming ~300 words per page)
+    const wordsPerPage = 300;
+    const currentPage = Math.floor(currentWordIndex / wordsPerPage) + 1;
+    const totalPages = Math.ceil(totalWords / wordsPerPage);
+
+    this.elements.pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+  }
 }
 
 // =============================================================================
@@ -518,6 +535,8 @@ class WordMarqueeEngine {
     this._boundHandleMouseDown = this._handleMouseDown.bind(this);
     this._boundHandleMouseMove = this._handleMouseMove.bind(this);
     this._boundHandleMouseUp = this._handleMouseUp.bind(this);
+    this._boundNextPage = this._nextPage.bind(this);
+    this._boundPrevPage = this._prevPage.bind(this);
   }
 
   loadNewText(words) {
@@ -638,6 +657,8 @@ class WordMarqueeEngine {
       if (wasPlaying) {
         this.start();
       }
+
+      saveState();
     } catch (error) {
       console.error('WordMarqueeEngine: Error toggling mode', error);
     }
@@ -657,6 +678,78 @@ class WordMarqueeEngine {
     }
   }
 
+  _nextPage() {
+    // Calculate words per page
+    const wordsPerPage = 300;
+    const totalWords = this.metrics.getWordCount();
+
+    const currentWordIndex = this.state.mode === 'smooth'
+      ? this._findClosestWordIndex(this.state.scrollOffset)
+      : this.state.focusIndex;
+
+    // Calculate next page start
+    const currentPage = Math.floor(currentWordIndex / wordsPerPage);
+    const nextPageStart = Math.min((currentPage + 1) * wordsPerPage, totalWords - 1);
+
+    // Jump to next page
+    if (this.state.mode === 'smooth') {
+      const wordData = this.metrics.getWordPositionData(nextPageStart);
+      if (wordData) {
+        this.state.scrollOffset = wordData.centerPosition;
+        this.renderer.render(this.state);
+        saveState();
+      }
+    } else {
+      this.state.focusIndex = nextPageStart;
+      this.renderer.render(this.state);
+      saveState();
+    }
+  }
+
+  _prevPage() {
+    // Calculate words per page
+    const wordsPerPage = 300;
+
+    const currentWordIndex = this.state.mode === 'smooth'
+      ? this._findClosestWordIndex(this.state.scrollOffset)
+      : this.state.focusIndex;
+
+    // Calculate previous page start
+    const currentPage = Math.floor(currentWordIndex / wordsPerPage);
+    const prevPageStart = Math.max((currentPage - 1) * wordsPerPage, 0);
+
+    // Jump to previous page
+    if (this.state.mode === 'smooth') {
+      const wordData = this.metrics.getWordPositionData(prevPageStart);
+      if (wordData) {
+        this.state.scrollOffset = wordData.centerPosition;
+        this.renderer.render(this.state);
+        saveState();
+      }
+    } else {
+      this.state.focusIndex = prevPageStart;
+      this.renderer.render(this.state);
+      saveState();
+    }
+  }
+
+  _findClosestWordIndex(scrollOffset) {
+    let closestIndex = 0;
+    let minDistance = Math.abs(scrollOffset - this.metrics.wordPositions[0].centerPosition);
+
+    for (let i = 1; i < this.metrics.wordPositions.length; i++) {
+      const distance = Math.abs(scrollOffset - this.metrics.wordPositions[i].centerPosition);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = i;
+      } else {
+        break;
+      }
+    }
+
+    return closestIndex;
+  }
+
   _animateSmooth(timestamp) {
     if (!this.state.lastTimestamp) {
       this.state.lastTimestamp = timestamp;
@@ -672,11 +765,13 @@ class WordMarqueeEngine {
       this.state.scrollOffset = lastWordCenter;
       this.renderer.render(this.state);
       this.stop();
+      saveState();
       return;
     }
 
     try {
       this.renderer.render(this.state);
+      saveStateDebounced(2000); // Save every 2 seconds during playback
 
       if (this.state.isPlaying && this.state.mode === 'smooth') {
         this.animationId = requestAnimationFrame(this._boundAnimateSmooth);
@@ -692,8 +787,10 @@ class WordMarqueeEngine {
       if (this.state.focusIndex < this.metrics.getWordCount() - 1) {
         this.state.focusIndex++;
         this.renderer.render(this.state);
+        saveStateDebounced(2000); // Save every 2 seconds during playback
       } else {
         this.stop();
+        saveState();
       }
     } catch (error) {
       console.error('WordMarqueeEngine: Error advancing word', error);
@@ -745,16 +842,19 @@ class WordMarqueeEngine {
         ));
 
         this.renderer.render(this.state);
+        saveStateDebounced();
       } else {
         if (event.deltaY > 0) {
           if (this.state.focusIndex > 0) {
             this.state.focusIndex--;
             this.renderer.render(this.state);
+            saveStateDebounced();
           }
         } else if (event.deltaY < 0) {
           if (this.state.focusIndex < this.metrics.getWordCount() - 1) {
             this.state.focusIndex++;
             this.renderer.render(this.state);
+            saveStateDebounced();
           }
         }
       }
@@ -799,6 +899,7 @@ class WordMarqueeEngine {
         ));
 
         this.renderer.render(this.state);
+        saveStateDebounced();
       } else {
         const wordThreshold = 30;
         const wordDelta = -Math.floor(deltaX / wordThreshold);
@@ -813,6 +914,7 @@ class WordMarqueeEngine {
         if (clampedIndex !== this.state.focusIndex) {
           this.state.focusIndex = clampedIndex;
           this.renderer.render(this.state);
+          saveStateDebounced();
         }
       }
     } catch (error) {
@@ -845,6 +947,8 @@ class WordMarqueeEngine {
   setupEventListeners() {
     const toggleModeBtn = document.getElementById('toggle-mode');
     const playPauseBtn = document.getElementById('play-pause');
+    const nextPageBtn = document.getElementById('readfast-next');
+    const prevPageBtn = document.getElementById('readfast-prev');
     const container = this.renderer.elements.container;
 
     if (toggleModeBtn) {
@@ -853,6 +957,14 @@ class WordMarqueeEngine {
 
     if (playPauseBtn) {
       this._addEventListener(playPauseBtn, 'click', () => this.togglePlayPause());
+    }
+
+    if (nextPageBtn) {
+      this._addEventListener(nextPageBtn, 'click', this._boundNextPage);
+    }
+
+    if (prevPageBtn) {
+      this._addEventListener(prevPageBtn, 'click', this._boundPrevPage);
     }
 
     this._addEventListener(document, 'keydown', (e) => {
@@ -950,21 +1062,26 @@ class PDFViewer {
         this.stopHighlighting();
         this.startHighlighting();
       }
+
+      saveState();
     }
   }
 
-  async loadPDF(filename) {
+  async loadPDF(filename, startPage = 1) {
     try {
       const pdfUrl = `${API_URL}/books/${filename}`;
       const loadingTask = pdfjsLib.getDocument(pdfUrl);
       this.pdfDoc = await loadingTask.promise;
       this.totalPages = this.pdfDoc.numPages;
-      this.currentPage = 1;
+
+      // Clamp start page to valid range
+      const validStartPage = Math.max(1, Math.min(startPage, this.pdfDoc.numPages));
+      this.currentPage = validStartPage;
 
       await this.renderPage(this.currentPage);
       this.updatePageInfo();
 
-      console.log('PDF loaded:', this.totalPages, 'pages');
+      console.log('PDF loaded:', this.totalPages, 'pages, starting at page', this.currentPage);
     } catch (error) {
       console.error('Error loading PDF:', error);
     }
@@ -984,6 +1101,14 @@ class PDFViewer {
       // Calculate scale to fit the container
       const containerWidth = this.container.offsetWidth - 40; // padding
       const containerHeight = this.container.offsetHeight - 80; // padding + info bar
+
+      // If container is hidden (dimensions are 0), skip rendering - it will be re-rendered when shown
+      if (containerWidth <= 0 || containerHeight <= 0) {
+        console.log('Container hidden, skipping render - will render when visible');
+        this.currentPage = pageNumber;
+        this.isRendering = false;
+        return;
+      }
 
       const viewport = page.getViewport({ scale: 1 });
       const scaleX = containerWidth / viewport.width;
@@ -1018,6 +1143,12 @@ class PDFViewer {
 
       this.currentPage = pageNumber;
       this.updatePageInfo();
+
+      // Only save state if this is a user-initiated page change, not during restoration
+      // We can tell by checking if we're in the middle of state restoration
+      if (typeof window._restoringState === 'undefined' || !window._restoringState) {
+        saveState();
+      }
     } catch (error) {
       console.error('Error rendering page:', error);
     } finally {
@@ -1088,6 +1219,7 @@ class PDFViewer {
     } else {
       this.startHighlighting();
     }
+    saveState();
   }
 
   startHighlighting() {
@@ -1181,6 +1313,7 @@ class PDFViewer {
     }
 
     this.currentHighlightIndex++;
+    saveStateDebounced(2000); // Save every 2 seconds during highlighting
   }
 
   updateHighlightButton() {
@@ -1319,16 +1452,86 @@ class PDFViewer {
 }
 
 // =============================================================================
+// STATE PERSISTENCE
+// =============================================================================
+
+const STATE_STORAGE_KEY = 'readfast_state';
+
+function saveState() {
+  if (!currentBook) return;
+
+  const state = {
+    book: {
+      filename: currentBook.filename,
+      title: currentBook.title,
+      type: currentBook.type
+    },
+    view: currentView,
+    readfast: engine ? {
+      mode: engine.state.mode,
+      scrollOffset: engine.state.scrollOffset,
+      focusIndex: engine.state.focusIndex,
+      wpm: CONFIG.wpm
+    } : null,
+    pdf: pdfViewer && pdfViewer.pdfDoc ? {
+      currentPage: pdfViewer.currentPage,
+      highlightingActive: pdfViewer.highlightingActive,
+      currentHighlightIndex: pdfViewer.currentHighlightIndex,
+      highlightWPM: pdfViewer.highlightWPM
+    } : null
+  };
+
+  try {
+    localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn('Failed to save state:', error);
+  }
+}
+
+function loadState() {
+  try {
+    const stateJson = localStorage.getItem(STATE_STORAGE_KEY);
+    if (!stateJson) return null;
+
+    return JSON.parse(stateJson);
+  } catch (error) {
+    console.warn('Failed to load state:', error);
+    return null;
+  }
+}
+
+function clearState() {
+  try {
+    localStorage.removeItem(STATE_STORAGE_KEY);
+  } catch (error) {
+    console.warn('Failed to clear state:', error);
+  }
+}
+
+// Debounced save for frequently changing state (position)
+let saveStateTimeout = null;
+function saveStateDebounced(delay = 500) {
+  if (saveStateTimeout) {
+    clearTimeout(saveStateTimeout);
+  }
+  saveStateTimeout = setTimeout(() => {
+    saveState();
+    saveStateTimeout = null;
+  }, delay);
+}
+
+// =============================================================================
 // BOOK LOADING FUNCTIONS
 // =============================================================================
 
 let currentBook = null;
 let engine = null;
 let pdfViewer = null;
-let currentView = 'readfast'; // 'readfast' or 'real'
+let currentView = 'real'; // 'readfast' or 'real'
 
-function switchView(view) {
+function switchView(view, skipSync = false) {
   currentView = view;
+  saveState();
 
   const mainContainer = document.getElementById('main-container');
   const pdfContainer = document.getElementById('pdf-container');
@@ -1337,6 +1540,7 @@ function switchView(view) {
   const toggleModeBtn = document.getElementById('toggle-mode');
   const playPauseBtn = document.getElementById('play-pause');
   const pdfNavButtons = document.querySelectorAll('.pdf-nav-buttons');
+  const readfastNavButtons = document.querySelectorAll('.readfast-nav-buttons');
 
   if (view === 'readfast') {
     // Show ReadFast view
@@ -1350,6 +1554,7 @@ function switchView(view) {
     // Show ReadFast controls
     toggleModeBtn.parentElement.style.display = 'flex';
     playPauseBtn.parentElement.style.display = 'flex';
+    readfastNavButtons.forEach(btn => btn.style.display = 'flex');
 
     // Hide PDF controls
     pdfNavButtons.forEach(btn => btn.style.display = 'none');
@@ -1359,8 +1564,8 @@ function switchView(view) {
       pdfViewer.removeEventListeners();
       pdfViewer.stopHighlighting();
 
-      // Sync ReadFast position based on PDF page and highlight position
-      if (engine && engine.metrics && pdfViewer.pdfDoc) {
+      // Sync ReadFast position based on PDF page and highlight position (unless skipping)
+      if (!skipSync && engine && engine.metrics && pdfViewer.pdfDoc) {
         const currentPage = pdfViewer.currentPage;
         const totalPages = pdfViewer.totalPages;
         const totalWords = engine.metrics.getWordCount();
@@ -1400,6 +1605,7 @@ function switchView(view) {
     // Hide ReadFast controls
     toggleModeBtn.parentElement.style.display = 'none';
     playPauseBtn.parentElement.style.display = 'none';
+    readfastNavButtons.forEach(btn => btn.style.display = 'none');
 
     // Show PDF controls
     pdfNavButtons.forEach(btn => btn.style.display = 'flex');
@@ -1408,8 +1614,8 @@ function switchView(view) {
     if (pdfViewer && pdfViewer.pdfDoc) {
       pdfViewer.setupEventListeners();
 
-      // Sync page position and highlight position based on word position
-      if (engine && engine.metrics) {
+      // Sync page position and highlight position based on word position (unless skipping)
+      if (!skipSync && engine && engine.metrics) {
         const currentWordIndex = engine.state.mode === 'smooth'
           ? findClosestWordIndex(engine.state.scrollOffset, engine.metrics)
           : engine.state.focusIndex;
@@ -1502,7 +1708,7 @@ function createBookCard(book) {
   return card;
 }
 
-async function selectBook(book, cardElement) {
+async function selectBook(book, cardElement, startPage = 1) {
   if (book.type === 'epub') {
     alert('EPUB support coming soon! Please select a PDF file.');
     return;
@@ -1524,13 +1730,14 @@ async function selectBook(book, cardElement) {
       engine.loadNewText(words);
     }
 
-    // Load PDF for Real view
+    // Load PDF for Real view with optional starting page
     if (pdfViewer) {
-      await pdfViewer.loadPDF(book.filename);
+      await pdfViewer.loadPDF(book.filename, startPage);
     }
 
     currentBook = book;
     loadingOverlay.classList.remove('active');
+    saveState();
   } catch (error) {
     console.error('Error loading book:', error);
     loadingOverlay.classList.remove('active');
@@ -1578,11 +1785,166 @@ function cleanText(text) {
     .trim();
 }
 
+async function restoreState(savedState) {
+  if (!savedState || !savedState.book) return false;
+
+  // Set flag to indicate we're restoring state
+  window._restoringState = true;
+
+  try {
+    // Find the book in the list
+    const bookCard = document.querySelector(`.book-card[data-filename="${savedState.book.filename}"]`);
+    if (!bookCard) {
+      console.warn('Saved book not found:', savedState.book.filename);
+      window._restoringState = false;
+      return false;
+    }
+
+    // Load the book with saved page number
+    const startPage = savedState.pdf?.currentPage || 1;
+    await selectBook(savedState.book, bookCard, startPage);
+
+    // Restore ReadFast state
+    if (savedState.readfast && engine) {
+      engine.state.mode = savedState.readfast.mode;
+      engine.state.scrollOffset = savedState.readfast.scrollOffset;
+      engine.state.focusIndex = savedState.readfast.focusIndex;
+
+      if (savedState.readfast.wpm) {
+        CONFIG.wpm = savedState.readfast.wpm;
+
+        // Recalculate speed
+        const wordInterval = 60000 / CONFIG.wpm;
+        const totalWidth = engine.metrics.getLastWordCenter();
+        const totalWords = engine.metrics.getWordCount();
+        engine.pixelsPerMs = (totalWidth / totalWords) / wordInterval;
+      }
+
+      engine.renderer.updateModeIndicator(engine.state.mode);
+      engine.renderer.render(engine.state);
+    }
+
+    // Restore PDF state (page was already loaded in selectBook)
+    if (savedState.pdf && pdfViewer && pdfViewer.pdfDoc) {
+      if (savedState.pdf.highlightWPM) {
+        pdfViewer.highlightWPM = savedState.pdf.highlightWPM;
+        const wpmInput = document.getElementById('pdf-wpm-input');
+        if (wpmInput) {
+          wpmInput.value = savedState.pdf.highlightWPM;
+        }
+      }
+
+      if (savedState.pdf.currentHighlightIndex) {
+        pdfViewer.currentHighlightIndex = savedState.pdf.currentHighlightIndex;
+      }
+
+      // Note: We don't auto-resume highlighting, user must click play
+    }
+
+    // Restore view (skip sync to preserve restored positions)
+    if (savedState.view) {
+      switchView(savedState.view, true); // true = skipSync
+
+      // If switching to 'real' view, re-render the PDF page to fix any scaling issues
+      // that may have occurred when the container was hidden
+      if (savedState.view === 'real' && pdfViewer && pdfViewer.pdfDoc) {
+        // Wait for next frame to ensure container is visible and has correct dimensions
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        await pdfViewer.renderPage(pdfViewer.currentPage);
+      }
+    } else {
+      // Save the final state even if view wasn't changed
+      saveState();
+    }
+
+    console.log('State restored successfully');
+    return true;
+  } catch (error) {
+    console.error('Error restoring state:', error);
+    return false;
+  } finally {
+    // Clear the restoration flag
+    window._restoringState = false;
+  }
+}
+
+// =============================================================================
+// HAMBURGER MENUS
+// =============================================================================
+
+function setupHamburgerMenu() {
+  const hamburgerBtn = document.getElementById('hamburger-btn');
+  const booksPanel = document.getElementById('books');
+  const viewerWrapper = document.getElementById('viewer-wrapper');
+
+  let isOpen = false;
+
+  hamburgerBtn.addEventListener('click', () => {
+    isOpen = !isOpen;
+
+    if (isOpen) {
+      hamburgerBtn.classList.add('active');
+      booksPanel.classList.add('open');
+      viewerWrapper.classList.add('books-open');
+    } else {
+      hamburgerBtn.classList.remove('active');
+      booksPanel.classList.remove('open');
+      viewerWrapper.classList.remove('books-open');
+    }
+  });
+
+  // Close menu when clicking outside
+  document.addEventListener('click', (e) => {
+    if (isOpen &&
+        !booksPanel.contains(e.target) &&
+        !hamburgerBtn.contains(e.target)) {
+      isOpen = false;
+      hamburgerBtn.classList.remove('active');
+      booksPanel.classList.remove('open');
+      viewerWrapper.classList.remove('books-open');
+    }
+  });
+}
+
+function setupControlsHamburgerMenu() {
+  const controlsHamburgerBtn = document.getElementById('controls-hamburger-btn');
+  const controlsPanel = document.getElementById('controls-panel');
+  const viewerWrapper = document.getElementById('viewer-wrapper');
+
+  let isOpen = false;
+
+  controlsHamburgerBtn.addEventListener('click', () => {
+    isOpen = !isOpen;
+
+    if (isOpen) {
+      controlsHamburgerBtn.classList.add('active');
+      controlsPanel.classList.add('open');
+      viewerWrapper.classList.add('controls-open');
+    } else {
+      controlsHamburgerBtn.classList.remove('active');
+      controlsPanel.classList.remove('open');
+      viewerWrapper.classList.remove('controls-open');
+    }
+  });
+
+  // Close menu when clicking outside
+  document.addEventListener('click', (e) => {
+    if (isOpen &&
+        !controlsPanel.contains(e.target) &&
+        !controlsHamburgerBtn.contains(e.target)) {
+      isOpen = false;
+      controlsHamburgerBtn.classList.remove('active');
+      controlsPanel.classList.remove('open');
+      viewerWrapper.classList.remove('controls-open');
+    }
+  });
+}
+
 // =============================================================================
 // INITIALIZATION
 // =============================================================================
 
-(function init() {
+(async function init() {
   try {
     engine = new WordMarqueeEngine(CONFIG, SAMPLE_WORDS);
     engine.setupEventListeners();
@@ -1593,6 +1955,9 @@ function cleanText(text) {
     // Initialize PDF viewer
     pdfViewer = new PDFViewer();
     window.pdfViewer = pdfViewer;
+
+    // Expose state management for debugging
+    window.clearReadFastState = clearState;
 
     // Setup tab switching
     const tabReadfast = document.getElementById('tab-readfast');
@@ -1606,8 +1971,21 @@ function cleanText(text) {
       tabReal.addEventListener('click', () => switchView('real'));
     }
 
+    // Setup hamburger menus
+    setupHamburgerMenu();
+    setupControlsHamburgerMenu();
+
     // Load books from server
-    loadBooks();
+    await loadBooks();
+
+    // Try to restore saved state
+    const savedState = loadState();
+    if (savedState) {
+      const restored = await restoreState(savedState);
+      if (!restored) {
+        console.log('Could not restore saved state, starting fresh');
+      }
+    }
 
     console.log('Speed Reader initialized successfully');
   } catch (error) {

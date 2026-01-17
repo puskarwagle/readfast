@@ -8,7 +8,19 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div id="books">
+<button id="hamburger-btn" class="hamburger-btn" aria-label="Toggle books menu">
+  <span></span>
+  <span></span>
+  <span></span>
+</button>
+
+<button id="controls-hamburger-btn" class="controls-hamburger-btn" aria-label="Toggle controls menu">
+  <span></span>
+  <span></span>
+  <span></span>
+</button>
+
+<div id="books" class="books-panel">
   <h2>📚 Your Books</h2>
   <div id="loading-books" class="loading-text">Loading books...</div>
   <div id="books-grid" class="books-grid"></div>
@@ -18,6 +30,7 @@
   <div id="main-container">
     <div id="display-area" role="region" aria-label="Reading area"></div>
     <div id="cursor"></div>
+    <div id="readfast-page-info"></div>
   </div>
 
   <div id="pdf-container" style="display: none;">
@@ -43,6 +56,12 @@
   </div>
   <div class="control-card">
     <button id="play-pause" aria-label="Play or pause reading">⏸</button>
+  </div>
+  <div class="control-card readfast-nav-buttons">
+    <button id="readfast-prev" aria-label="Previous page">◀</button>
+  </div>
+  <div class="control-card readfast-nav-buttons">
+    <button id="readfast-next" aria-label="Next page">▶</button>
   </div>
   <div class="control-card pdf-nav-buttons" style="display: none;">
     <button id="pdf-highlight-play" aria-label="Play or pause auto-highlighting">▶</button>

@@ -10,7 +10,102 @@ body {
   font-family: Arial, sans-serif;
 }
 
+.hamburger-btn {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  width: 40px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid #666;
+  border-radius: 8px;
+  cursor: pointer;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  transition: all 0.3s ease;
+}
+
+.hamburger-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: #999;
+}
+
+.hamburger-btn span {
+  display: block;
+  width: 24px;
+  height: 3px;
+  background: white;
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+.hamburger-btn.active span:nth-child(1) {
+  transform: translateY(9px) rotate(45deg);
+}
+
+.hamburger-btn.active span:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger-btn.active span:nth-child(3) {
+  transform: translateY(-9px) rotate(-45deg);
+}
+
+.controls-hamburger-btn {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid #666;
+  border-radius: 8px;
+  cursor: pointer;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  transition: all 0.3s ease;
+}
+
+.controls-hamburger-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: #999;
+}
+
+.controls-hamburger-btn span {
+  display: block;
+  width: 24px;
+  height: 3px;
+  background: white;
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+.controls-hamburger-btn.active span:nth-child(1) {
+  transform: translateY(9px) rotate(45deg);
+}
+
+.controls-hamburger-btn.active span:nth-child(2) {
+  opacity: 0;
+}
+
+.controls-hamburger-btn.active span:nth-child(3) {
+  transform: translateY(-9px) rotate(-45deg);
+}
+
 #books {
+  position: fixed;
+  left: 0;
+  top: 0;
   width: 20%;
   height: 100vh;
   background: rgba(255, 255, 255, 0.05);
@@ -18,6 +113,13 @@ body {
   overflow-y: auto;
   padding: 20px;
   box-sizing: border-box;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+  z-index: 1000;
+}
+
+#books.open {
+  transform: translateX(0);
 }
 
 #books h2 {
@@ -101,8 +203,18 @@ body {
 #viewer-wrapper {
   width: 55%;
   height: 100vh;
-  border-right: 2px solid #666;
+  border-right: 0px solid #666;
   position: relative;
+  margin-left: 0;
+  transition: margin-left 0.3s ease;
+}
+
+#viewer-wrapper.books-open {
+  margin-left: 20%;
+}
+
+#viewer-wrapper.controls-open {
+  margin-right: 25%;
 }
 
 #main-container {
@@ -144,6 +256,7 @@ body {
   max-height: calc(100vh - 80px);
   object-fit: contain;
   box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+  filter: invert(1);
 }
 
 #pdf-text-layer {
@@ -170,10 +283,11 @@ body {
   position: absolute;
   background-color: rgba(0, 100, 255, 0.3);
   pointer-events: none;
-  z-index: -1;
+  z-index: 1;
 }
 
-#pdf-page-info {
+#pdf-page-info,
+#readfast-page-info {
   position: absolute;
   bottom: 20px;
   left: 50%;
@@ -273,6 +387,9 @@ body {
 }
 
 #controls-panel {
+  position: fixed;
+  right: 0;
+  top: 0;
   width: 25%;
   height: 100vh;
   background: rgba(255, 255, 255, 0.05);
@@ -282,6 +399,14 @@ body {
   align-items: center;
   justify-content: center;
   gap: 16px;
+  box-sizing: border-box;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  z-index: 1000;
+}
+
+#controls-panel.open {
+  transform: translateX(0);
 }
 
 .control-card {
