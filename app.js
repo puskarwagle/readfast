@@ -112,7 +112,7 @@ class SentenceDetector {
 
 // Sample text as fallback
 const SAMPLE_WORDS = [
-  "Welcome", "to", "Speed", "Reader", "Select", "a", "book", "from", "the", "left",
+  "Welcome", "to", "Capsicum", "Speed", "Reader", "Select", "a", "book", "from", "the", "left",
   "sidebar", "to", "start", "reading", "You", "can", "toggle", "between", "smooth",
   "and", "word", "modes", "using", "the", "button", "below", "Use", "your", "mouse",
   "wheel", "or", "drag", "to", "manually", "scroll", "through", "the", "text",
@@ -1402,25 +1402,9 @@ class PDFViewer {
     this._boundNextPage = () => this.nextPage();
     this._boundToggleHighlight = () => this.toggleHighlighting();
     this._boundAdvanceHighlight = this._advanceHighlight.bind(this);
-    this._boundHandleWPMChange = this._handleWPMChange.bind(this);
     this._boundZoomIn = () => this.zoomIn();
     this._boundZoomOut = () => this.zoomOut();
     this._boundHandlePinch = this._handlePinch.bind(this);
-  }
-
-  _handleWPMChange(event) {
-    const newWPM = parseInt(event.target.value);
-    if (newWPM >= 50 && newWPM <= 1000) {
-      this.highlightWPM = newWPM;
-
-      // Restart highlighting if it's currently active
-      if (this.highlightingActive) {
-        this.stopHighlighting();
-        this.startHighlighting();
-      }
-
-      saveState();
-    }
   }
 
   async loadPDF(filename, startPage = 1) {
@@ -1445,64 +1429,64 @@ class PDFViewer {
 
   async renderPage(pageNumber) {
     if (!this.pdfDoc || this.isRendering) return;
-
+    
     this.isRendering = true;
-
-    // Stop highlighting when changing pages
     this.stopHighlighting();
-
+    
     try {
       const page = await this.pdfDoc.getPage(pageNumber);
-
-      // Calculate scale to fit the container
-      const containerWidth = this.container.offsetWidth - 40; // padding
-      const containerHeight = this.container.offsetHeight - 80; // padding + info bar
-
-      // If container is hidden (dimensions are 0), skip rendering - it will be re-rendered when shown
+      
+      // Get FRESH container dimensions
+      const containerWidth = this.container.offsetWidth - 40;
+      const containerHeight = this.container.offsetHeight - 80;
+      
       if (containerWidth <= 0 || containerHeight <= 0) {
-        console.log('Container hidden, skipping render - will render when visible');
+        console.log('Container hidden, skipping render');
         this.currentPage = pageNumber;
         this.isRendering = false;
         return;
       }
-
+      
+      // Calculate base scale to fit container at zoom level 1
       const viewport = page.getViewport({ scale: 1 });
       const scaleX = containerWidth / viewport.width;
       const scaleY = containerHeight / viewport.height;
       const baseScale = Math.min(scaleX, scaleY);
-      const scale = baseScale * this.zoomLevel;
-
-      const scaledViewport = page.getViewport({ scale });
-      this.currentScale = scale;
-
+      
+      // Apply zoom on top of base scale
+      const finalScale = baseScale * this.zoomLevel;
+      const scaledViewport = page.getViewport({ scale: finalScale });
+      
+      this.currentScale = finalScale;
+      
       // Support HiDPI screens
       const outputScale = window.devicePixelRatio || 1;
-
+      
+      // Set canvas dimensions
       this.canvas.width = Math.floor(scaledViewport.width * outputScale);
       this.canvas.height = Math.floor(scaledViewport.height * outputScale);
       this.canvas.style.width = Math.floor(scaledViewport.width) + 'px';
       this.canvas.style.height = Math.floor(scaledViewport.height) + 'px';
-
-      const transform = outputScale !== 1
-        ? [outputScale, 0, 0, outputScale, 0, 0]
+      
+      const transform = outputScale !== 1 
+        ? [outputScale, 0, 0, outputScale, 0, 0] 
         : null;
-
+      
       const renderContext = {
         canvasContext: this.ctx,
         transform: transform,
         viewport: scaledViewport
       };
-
+      
+      // Clear canvas before rendering
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      
       await page.render(renderContext).promise;
-
-      // Render text layer
       await this.renderTextLayer(page, scaledViewport);
-
+      
       this.currentPage = pageNumber;
       this.updatePageInfo();
-
-      // Only save state if this is a user-initiated page change, not during restoration
-      // We can tell by checking if we're in the middle of state restoration
+      
       if (typeof window._restoringState === 'undefined' || !window._restoringState) {
         saveState();
       }
@@ -1745,20 +1729,29 @@ class PDFViewer {
     }
   }
 
+  setZoom(newZoom) {
+    const oldZoom = this.zoomLevel;
+    this.zoomLevel = Math.max(this.minZoom, Math.min(newZoom, this.maxZoom));
+    
+    // Only re-render if zoom actually changed
+    if (oldZoom !== this.zoomLevel && this.currentPage > 0) {
+      // Force a fresh render
+      this.isRendering = false; // Reset the flag in case it's stuck
+      this.renderPage(this.currentPage);
+    }
+    
+    saveState();
+  }
+
+  // Also update these methods for smoother zooming
   zoomIn(amount = 0.2) {
-    this.setZoom(this.zoomLevel + amount);
+    const newZoom = this.zoomLevel + amount;
+    this.setZoom(newZoom);
   }
 
   zoomOut(amount = 0.2) {
-    this.setZoom(this.zoomLevel - amount);
-  }
-
-  setZoom(newZoom) {
-    this.zoomLevel = Math.max(this.minZoom, Math.min(newZoom, this.maxZoom));
-    if (this.currentPage > 0) {
-      this.renderPage(this.currentPage);
-    }
-    saveState();
+    const newZoom = this.zoomLevel - amount;
+    this.setZoom(newZoom);
   }
 
   setupEventListeners() {
@@ -1776,7 +1769,6 @@ class PDFViewer {
     const prevBtn = document.getElementById('prev-page');
     const nextBtn = document.getElementById('next-page');
     const highlightBtn = document.getElementById('pdf-highlight-play');
-    const wpmInput = document.getElementById('pdf-wpm-input');
     const zoomInBtn = document.getElementById('zoom-in');
     const zoomOutBtn = document.getElementById('zoom-out');
 
@@ -1790,10 +1782,6 @@ class PDFViewer {
 
     if (highlightBtn) {
       highlightBtn.addEventListener('click', this._boundToggleHighlight);
-    }
-
-    if (wpmInput) {
-      wpmInput.addEventListener('input', this._boundHandleWPMChange);
     }
 
     if (zoomInBtn) {
@@ -1822,7 +1810,6 @@ class PDFViewer {
     const prevBtn = document.getElementById('prev-page');
     const nextBtn = document.getElementById('next-page');
     const highlightBtn = document.getElementById('pdf-highlight-play');
-    const wpmInput = document.getElementById('pdf-wpm-input');
     const zoomInBtn = document.getElementById('zoom-in');
     const zoomOutBtn = document.getElementById('zoom-out');
 
@@ -1836,10 +1823,6 @@ class PDFViewer {
 
     if (highlightBtn) {
       highlightBtn.removeEventListener('click', this._boundToggleHighlight);
-    }
-
-    if (wpmInput) {
-      wpmInput.removeEventListener('input', this._boundHandleWPMChange);
     }
 
     if (zoomInBtn) {
@@ -2039,9 +2022,11 @@ function switchView(view, skipSync = false) {
     pdfNavButtons.forEach(btn => btn.style.display = 'flex');
 
     // Setup PDF event listeners
-    if (pdfViewer && pdfViewer.pdfDoc) {
+    if (pdfViewer) {
       pdfViewer.setupEventListeners();
+    }
 
+    if (pdfViewer && pdfViewer.pdfDoc) {
       // Sync page position and highlight position based on word position (unless skipping)
       if (!skipSync && engine && engine.metrics) {
         const currentWordIndex = engine.state.mode === 'smooth'

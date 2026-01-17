@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Speed Reader</title>
+<title>Capsicum Speed Reader</title>
+<link rel="icon" type="image/x-icon" href="capsicum.ico">
+<link rel="icon" type="image/png" href="capsicum.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -34,7 +36,10 @@
 </button>
 
 <div id="books" class="books-panel">
-  <h2>📚 Your Books</h2>
+  <div class="sidebar-header">
+    <img src="capsicum.png" alt="Capsicum Logo" class="sidebar-logo">
+    <h2>Your Books</h2>
+  </div>
   <div id="loading-books" class="loading-text">Loading books...</div>
   <div id="books-grid" class="books-grid"></div>
 </div>
@@ -52,10 +57,6 @@
       <div id="pdf-text-layer"></div>
     </div>
     <div id="pdf-page-info"></div>
-    <div id="pdf-wpm-control">
-      <label for="pdf-wpm-input">WPM:</label>
-      <input type="number" id="pdf-wpm-input" min="50" max="1000" step="10" value="250">
-    </div>
   </div>
 </div>
 
@@ -122,6 +123,7 @@
 </div>
 
 <div class="loading-overlay" id="loading-overlay">
+  <img src="capsicum.png" alt="Capsicum Logo" class="loading-logo">
   <div class="loading-spinner"></div>
   <p>Extracting text from PDF...</p>
 </div>

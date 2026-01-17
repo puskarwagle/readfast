@@ -134,10 +134,25 @@ body {
   color: white;
   font-size: 22px;
   font-weight: 600;
-  margin: 0 0 30px 0;
+  margin: 0;
   text-align: center;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
   letter-spacing: 0.5px;
+}
+
+.sidebar-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 30px;
+}
+
+.sidebar-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
 }
 
 .books-grid {
@@ -656,6 +671,13 @@ button:active {
   height: 50px;
   animation: spin 1s linear infinite;
   margin-bottom: 20px;
+}
+
+.loading-logo {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 20px;
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
 }
 
 @keyframes spin {
