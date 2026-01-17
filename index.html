@@ -304,8 +304,8 @@ const API_URL = 'http://localhost:3000/api';
 const CONFIG = {
   wpm: 250,
   wordSpacing: 8,
-  linesAbove: 6,
-  linesBelow: 6,
+  linesAbove: 12,
+  linesBelow: 12,
   rowHeight: 40,
   fontSize: 20,
   fontFamily: 'Arial, sans-serif',
@@ -777,7 +777,7 @@ class WordMarqueeEngine {
     }
 
     this.state = {
-      mode: 'smooth',
+      mode: 'word',
       isPlaying: false,
       scrollOffset: 0,
       focusIndex: 0,

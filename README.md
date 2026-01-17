@@ -76,14 +76,14 @@ Simply add PDF files to the `books/` folder. They will automatically appear in t
 - **Frontend**: HTML, CSS, JavaScript
 - **Backend**: Node.js + Express
 - **PDF Processing**:
-  - Server-side: pdf-parse
+  - Server-side: pdfjs-dist (Mozilla's PDF.js for Node.js)
   - Client-side fallback: PDF.js
 
 ### How It Works
 
 1. The Express server serves the static files and provides API endpoints
 2. Books are listed from the `books/` directory
-3. When a book is selected, text is extracted using pdf-parse (server-side)
+3. When a book is selected, text is extracted using pdfjs-dist (server-side)
 4. If server extraction fails, PDF.js extracts text client-side
 5. The text is then displayed word-by-word using RSVP technique
 6. ORP algorithm highlights the optimal character for eye fixation

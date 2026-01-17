@@ -2,7 +2,12 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs').promises;
 const path = require('path');
-const pdfParse = require('pdf-parse');
+
+// Import pdfjs-dist dynamically since it's an ES module
+let pdfjsLib;
+(async () => {
+    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+})();
 
 const app = express();
 const PORT = 3000;
@@ -45,13 +50,36 @@ app.get('/api/books/:filename/extract', async (req, res) => {
             return res.status(400).json({ error: 'Only PDF files are supported for server-side extraction' });
         }
 
+        // Ensure pdfjs-dist is loaded
+        if (!pdfjsLib) {
+            return res.status(503).json({ error: 'PDF processing library is still loading' });
+        }
+
         const dataBuffer = await fs.readFile(filePath);
-        const pdfData = await pdfParse(dataBuffer);
+
+        // Load PDF document using pdfjs-dist
+        const loadingTask = pdfjsLib.getDocument({
+            data: new Uint8Array(dataBuffer),
+            useSystemFonts: true,
+        });
+        const pdf = await loadingTask.promise;
+
+        // Extract text from all pages
+        let fullText = '';
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map(item => item.str).join(' ');
+            fullText += pageText + '\n';
+        }
+
+        // Get metadata
+        const metadata = await pdf.getMetadata();
 
         res.json({
-            text: pdfData.text,
-            pages: pdfData.numpages,
-            info: pdfData.info
+            text: fullText,
+            pages: pdf.numPages,
+            info: metadata.info
         });
     } catch (error) {
         console.error('Error extracting PDF text:', error);
