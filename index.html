@@ -54,23 +54,29 @@
   <div class="control-card">
     <button id="toggle-mode" aria-label="Toggle between smooth and word mode">Smooth</button>
   </div>
-  <div class="control-card">
-    <button id="play-pause" aria-label="Play or pause reading">⏸</button>
+
+  <div class="nav-row readfast-nav-buttons">
+    <div class="control-card nav-button">
+      <button id="readfast-prev" aria-label="Previous page">◀</button>
+    </div>
+    <div class="control-card nav-button">
+      <button id="play-pause" aria-label="Play or pause reading">⏸</button>
+    </div>
+    <div class="control-card nav-button">
+      <button id="readfast-next" aria-label="Next page">▶</button>
+    </div>
   </div>
-  <div class="control-card readfast-nav-buttons">
-    <button id="readfast-prev" aria-label="Previous page">◀</button>
-  </div>
-  <div class="control-card readfast-nav-buttons">
-    <button id="readfast-next" aria-label="Next page">▶</button>
-  </div>
-  <div class="control-card pdf-nav-buttons" style="display: none;">
-    <button id="pdf-highlight-play" aria-label="Play or pause auto-highlighting">▶</button>
-  </div>
-  <div class="control-card pdf-nav-buttons" style="display: none;">
-    <button id="prev-page" aria-label="Previous page">◀</button>
-  </div>
-  <div class="control-card pdf-nav-buttons" style="display: none;">
-    <button id="next-page" aria-label="Next page">▶</button>
+
+  <div class="nav-row pdf-nav-buttons" style="display: none;">
+    <div class="control-card nav-button">
+      <button id="prev-page" aria-label="Previous page">◀</button>
+    </div>
+    <div class="control-card nav-button">
+      <button id="pdf-highlight-play" aria-label="Play or pause auto-highlighting">⏸</button>
+    </div>
+    <div class="control-card nav-button">
+      <button id="next-page" aria-label="Next page">▶</button>
+    </div>
   </div>
 </div>
 

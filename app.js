@@ -34,6 +34,78 @@ const CONFIG = {
   }
 };
 
+// =============================================================================
+// SENTENCE UTILITIES
+// =============================================================================
+
+class SentenceDetector {
+  constructor() {
+    // Common abbreviations that shouldn't end sentences
+    this.abbreviations = new Set([
+      'Dr', 'Mr', 'Mrs', 'Ms', 'Prof', 'Sr', 'Jr',
+      'etc', 'vs', 'e.g', 'i.e', 'cf', 'approx',
+      'U.S', 'U.K', 'U.N', 'E.U',
+      'St', 'Ave', 'Blvd', 'Rd',
+      'Jan', 'Feb', 'Mar', 'Apr', 'Jun', 'Jul', 'Aug', 'Sep', 'Sept', 'Oct', 'Nov', 'Dec',
+      'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
+      'Inc', 'Ltd', 'Corp', 'Co'
+    ]);
+  }
+
+  // Split text into sentences
+  detectSentences(text) {
+    if (!text || text.trim().length === 0) {
+      return [];
+    }
+
+    const sentences = [];
+    let currentSentence = '';
+    let i = 0;
+
+    while (i < text.length) {
+      const char = text[i];
+      currentSentence += char;
+
+      // Check for sentence-ending punctuation
+      if (char === '.' || char === '!' || char === '?') {
+        // Look ahead to see what comes next
+        const nextChar = text[i + 1];
+        const afterSpace = text[i + 2];
+
+        // Check if this is likely an abbreviation
+        const words = currentSentence.trim().split(/\s+/);
+        const lastWord = words[words.length - 1];
+        const isAbbreviation = this.abbreviations.has(lastWord.replace(/\.$/, ''));
+
+        // End sentence if:
+        // 1. Not an abbreviation AND
+        // 2. (Next char is space/newline/end OR next char is closing quote followed by space/end) AND
+        // 3. (After space is uppercase OR end of text OR another punctuation)
+        if (!isAbbreviation) {
+          const nextIsWhitespace = !nextChar || /\s/.test(nextChar);
+          const nextIsQuote = nextChar === '"' || nextChar === "'";
+          const afterSpaceIsUpper = afterSpace && /[A-Z]/.test(afterSpace);
+          const isEndOfText = i === text.length - 1;
+
+          if ((nextIsWhitespace || nextIsQuote) && (afterSpaceIsUpper || isEndOfText || !nextChar)) {
+            sentences.push(currentSentence.trim());
+            currentSentence = '';
+          }
+        }
+      }
+
+      i++;
+    }
+
+    // Add any remaining text as the last sentence
+    if (currentSentence.trim().length > 0) {
+      sentences.push(currentSentence.trim());
+    }
+
+    return sentences;
+  }
+}
+
 // Sample text as fallback
 const SAMPLE_WORDS = [
   "Welcome", "to", "Speed", "Reader", "Select", "a", "book", "from", "the", "left",
@@ -166,9 +238,10 @@ class WordMetrics {
 // =============================================================================
 
 class RenderEngine {
-  constructor(config, metrics) {
+  constructor(config, metrics, sentenceWordMap = []) {
     this.config = config;
     this.metrics = metrics;
+    this.sentenceWordMap = sentenceWordMap;
 
     this.elements = {
       displayArea: document.getElementById('display-area'),
@@ -294,12 +367,74 @@ class RenderEngine {
     });
   }
 
+  _renderSentenceMode(state) {
+    const sentenceIndex = state.sentenceIndex || 0;
+
+    if (sentenceIndex < 0 || sentenceIndex >= this.sentenceWordMap.length) {
+      return;
+    }
+
+    const sentenceMap = this.sentenceWordMap[sentenceIndex];
+    if (!sentenceMap) return;
+
+    const fragment = document.createDocumentFragment();
+
+    // Create a centered container for the sentence
+    const sentenceDiv = document.createElement('div');
+    sentenceDiv.className = 'sentence-container';
+    sentenceDiv.style.position = 'absolute';
+    sentenceDiv.style.top = '50%';
+    sentenceDiv.style.left = '50%';
+    sentenceDiv.style.transform = 'translate(-50%, -50%)';
+    sentenceDiv.style.width = '90%';
+    sentenceDiv.style.textAlign = 'center';
+    sentenceDiv.style.fontSize = '24px';
+    sentenceDiv.style.lineHeight = '1.6';
+    sentenceDiv.style.color = 'white';
+    sentenceDiv.style.padding = '20px';
+
+    // Highlight all words in the sentence
+    const words = sentenceMap.text.split(/\s+/).filter(w => w.length > 0);
+    words.forEach((word, index) => {
+      const wordSpan = document.createElement('span');
+      wordSpan.textContent = word;
+      wordSpan.style.background = 'rgba(255, 255, 255, 0.1)';
+      wordSpan.style.padding = '2px 4px';
+      wordSpan.style.margin = '0 2px';
+      wordSpan.style.borderRadius = '3px';
+      wordSpan.style.transition = 'background 0.2s';
+
+      sentenceDiv.appendChild(wordSpan);
+
+      if (index < words.length - 1) {
+        sentenceDiv.appendChild(document.createTextNode(' '));
+      }
+    });
+
+    fragment.appendChild(sentenceDiv);
+
+    this.elements.displayArea.innerHTML = '';
+    this.elements.displayArea.appendChild(fragment);
+
+    // Update page info
+    if (this.elements.pageInfo) {
+      const totalSentences = this.sentenceWordMap.length;
+      this.elements.pageInfo.textContent = `Sentence ${sentenceIndex + 1} of ${totalSentences}`;
+    }
+  }
+
   render(state) {
     if (!this.elements.displayArea) {
       return;
     }
 
     try {
+      // Handle sentence mode separately
+      if (state.mode === 'sentence') {
+        this._renderSentenceMode(state);
+        return;
+      }
+
       let currentFocusIndex;
       let globalOffset;
       let scrollOffset = state.scrollOffset;
@@ -455,7 +590,13 @@ class RenderEngine {
   updateModeIndicator(mode) {
     const toggleBtn = document.getElementById('toggle-mode');
     if (toggleBtn) {
-      toggleBtn.textContent = mode === 'smooth' ? 'Smooth' : 'Word';
+      if (mode === 'smooth') {
+        toggleBtn.textContent = 'Smooth';
+      } else if (mode === 'word') {
+        toggleBtn.textContent = 'Word';
+      } else if (mode === 'sentence') {
+        toggleBtn.textContent = 'Sentence';
+      }
     }
   }
 
@@ -497,18 +638,26 @@ class WordMarqueeEngine {
 
     try {
       this.metrics = new WordMetrics(words, config);
-      this.renderer = new RenderEngine(config, this.metrics);
+      // Initialize sentence detector first
+      this.sentenceDetector = new SentenceDetector();
+      this.sentences = [];
+      this.sentenceWordMap = [];
+      this.renderer = new RenderEngine(config, this.metrics, this.sentenceWordMap);
     } catch (error) {
       throw new Error(`WordMarqueeEngine: Initialization failed - ${error.message}`);
     }
 
     this.state = {
-      mode: 'word',
+      mode: 'word', // 'word', 'smooth', or 'sentence'
       isPlaying: false,
       scrollOffset: 0,
       focusIndex: 0,
+      sentenceIndex: 0,
       lastTimestamp: null
     };
+
+    // Initialize sentences
+    this._initializeSentences();
 
     this.animationId = null;
     this.intervalId = null;
@@ -531,12 +680,38 @@ class WordMarqueeEngine {
 
     this._boundAnimateSmooth = this._animateSmooth.bind(this);
     this._boundAdvanceWord = this._advanceWord.bind(this);
+    this._boundAdvanceSentence = this._advanceSentence.bind(this);
     this._boundHandleWheel = this._handleWheel.bind(this);
     this._boundHandleMouseDown = this._handleMouseDown.bind(this);
     this._boundHandleMouseMove = this._handleMouseMove.bind(this);
     this._boundHandleMouseUp = this._handleMouseUp.bind(this);
     this._boundNextPage = this._nextPage.bind(this);
     this._boundPrevPage = this._prevPage.bind(this);
+  }
+
+  _initializeSentences() {
+    // Convert words array to text
+    const text = this.words.join(' ');
+    this.sentences = this.sentenceDetector.detectSentences(text);
+
+    // Map each sentence to its word indices
+    this.sentenceWordMap = [];
+    let wordIndex = 0;
+
+    this.sentences.forEach((sentence, sentenceIdx) => {
+      const sentenceWords = sentence.split(/\s+/).filter(w => w.length > 0);
+      const startWordIndex = wordIndex;
+      const endWordIndex = wordIndex + sentenceWords.length - 1;
+
+      this.sentenceWordMap.push({
+        sentenceIndex: sentenceIdx,
+        startWordIndex,
+        endWordIndex,
+        text: sentence
+      });
+
+      wordIndex += sentenceWords.length;
+    });
   }
 
   loadNewText(words) {
@@ -554,7 +729,11 @@ class WordMarqueeEngine {
 
     // Recreate metrics and renderer
     this.metrics = new WordMetrics(words, this.config);
-    this.renderer = new RenderEngine(this.config, this.metrics);
+
+    // Initialize sentences before creating renderer
+    this._initializeSentences();
+
+    this.renderer = new RenderEngine(this.config, this.metrics, this.sentenceWordMap);
 
     // Reset state
     this.state = {
@@ -562,6 +741,7 @@ class WordMarqueeEngine {
       isPlaying: false,
       scrollOffset: 0,
       focusIndex: 0,
+      sentenceIndex: 0,
       lastTimestamp: null
     };
 
@@ -579,7 +759,7 @@ class WordMarqueeEngine {
     this.renderer.updateModeIndicator(this.state.mode);
     this.renderer.updatePlayPauseButton(false);
 
-    console.log('Text loaded:', words.length, 'words');
+    console.log('Text loaded:', words.length, 'words,', this.sentences.length, 'sentences');
   }
 
   start() {
@@ -599,7 +779,11 @@ class WordMarqueeEngine {
       if (this.state.mode === 'smooth') {
         this.state.lastTimestamp = null;
         this.animationId = requestAnimationFrame(this._boundAnimateSmooth);
+      } else if (this.state.mode === 'sentence') {
+        // Sentence mode: calculate interval based on sentence length
+        this._advanceSentence();
       } else {
+        // Word mode
         const wordInterval = 60000 / this.config.wpm;
         this.intervalId = setInterval(this._boundAdvanceWord, wordInterval);
       }
@@ -620,6 +804,7 @@ class WordMarqueeEngine {
 
     if (this.intervalId) {
       clearInterval(this.intervalId);
+      clearTimeout(this.intervalId);
       this.intervalId = null;
     }
 
@@ -631,20 +816,31 @@ class WordMarqueeEngine {
     this.stop();
 
     try {
+      const currentFocusIndex = this.state.mode === 'smooth'
+        ? this._findClosestWordIndex(this.state.scrollOffset)
+        : this.state.focusIndex;
+
+      // Cycle through modes: smooth -> word -> sentence -> smooth
       if (this.state.mode === 'smooth') {
         this.state.mode = 'word';
+        this.state.focusIndex = currentFocusIndex;
+      } else if (this.state.mode === 'word') {
+        this.state.mode = 'sentence';
 
-        for (let i = 0; i < this.metrics.wordPositions.length; i++) {
-          const wordData = this.metrics.getWordPositionData(i);
-          if (wordData && this.state.scrollOffset >= wordData.centerPosition) {
-            this.state.focusIndex = i;
-          } else {
+        // Find which sentence contains the current word
+        this.state.sentenceIndex = 0;
+        for (let i = 0; i < this.sentenceWordMap.length; i++) {
+          const sentenceMap = this.sentenceWordMap[i];
+          if (currentFocusIndex >= sentenceMap.startWordIndex &&
+              currentFocusIndex <= sentenceMap.endWordIndex) {
+            this.state.sentenceIndex = i;
+            this.state.focusIndex = sentenceMap.startWordIndex;
             break;
           }
         }
       } else {
+        // sentence -> smooth
         this.state.mode = 'smooth';
-
         const wordData = this.metrics.getWordPositionData(this.state.focusIndex);
         if (wordData) {
           this.state.scrollOffset = wordData.centerPosition;
@@ -679,6 +875,24 @@ class WordMarqueeEngine {
   }
 
   _nextPage() {
+    if (this.state.mode === 'sentence') {
+      // In sentence mode, jump forward by 10 sentences
+      const jumpSize = 10;
+      const newIndex = Math.min(
+        this.state.sentenceIndex + jumpSize,
+        this.sentenceWordMap.length - 1
+      );
+
+      this.state.sentenceIndex = newIndex;
+      const sentenceMap = this.sentenceWordMap[newIndex];
+      if (sentenceMap) {
+        this.state.focusIndex = sentenceMap.startWordIndex;
+      }
+      this.renderer.render(this.state);
+      saveState();
+      return;
+    }
+
     // Calculate words per page
     const wordsPerPage = 300;
     const totalWords = this.metrics.getWordCount();
@@ -707,6 +921,21 @@ class WordMarqueeEngine {
   }
 
   _prevPage() {
+    if (this.state.mode === 'sentence') {
+      // In sentence mode, jump backward by 10 sentences
+      const jumpSize = 10;
+      const newIndex = Math.max(this.state.sentenceIndex - jumpSize, 0);
+
+      this.state.sentenceIndex = newIndex;
+      const sentenceMap = this.sentenceWordMap[newIndex];
+      if (sentenceMap) {
+        this.state.focusIndex = sentenceMap.startWordIndex;
+      }
+      this.renderer.render(this.state);
+      saveState();
+      return;
+    }
+
     // Calculate words per page
     const wordsPerPage = 300;
 
@@ -798,6 +1027,37 @@ class WordMarqueeEngine {
     }
   }
 
+  _advanceSentence() {
+    try {
+      if (this.state.sentenceIndex < this.sentenceWordMap.length - 1) {
+        this.state.sentenceIndex++;
+        const sentenceMap = this.sentenceWordMap[this.state.sentenceIndex];
+        if (sentenceMap) {
+          this.state.focusIndex = sentenceMap.startWordIndex;
+        }
+        this.renderer.render(this.state);
+        saveStateDebounced(2000); // Save every 2 seconds during playback
+
+        // Calculate delay based on sentence word count and WPM
+        const wordCount = sentenceMap.text.split(/\s+/).filter(w => w.length > 0).length;
+        const wordsPerMinute = this.config.wpm;
+        const delayMs = (wordCount / wordsPerMinute) * 60000;
+
+        // Schedule next sentence advance if still playing
+        if (this.state.isPlaying && this.state.mode === 'sentence') {
+          this.intervalId = setTimeout(this._boundAdvanceSentence, delayMs);
+        }
+      } else {
+        // Reached the end
+        this.stop();
+        saveState();
+      }
+    } catch (error) {
+      console.error('WordMarqueeEngine: Error advancing sentence', error);
+      this.stop();
+    }
+  }
+
   _startAutoResumeTimer() {
     if (this.autoResumeTimer) {
       clearTimeout(this.autoResumeTimer);
@@ -843,7 +1103,33 @@ class WordMarqueeEngine {
 
         this.renderer.render(this.state);
         saveStateDebounced();
+      } else if (this.state.mode === 'sentence') {
+        // Navigate between sentences
+        if (event.deltaY > 0) {
+          // Scroll down = previous sentence
+          if (this.state.sentenceIndex > 0) {
+            this.state.sentenceIndex--;
+            const sentenceMap = this.sentenceWordMap[this.state.sentenceIndex];
+            if (sentenceMap) {
+              this.state.focusIndex = sentenceMap.startWordIndex;
+            }
+            this.renderer.render(this.state);
+            saveStateDebounced();
+          }
+        } else if (event.deltaY < 0) {
+          // Scroll up = next sentence
+          if (this.state.sentenceIndex < this.sentenceWordMap.length - 1) {
+            this.state.sentenceIndex++;
+            const sentenceMap = this.sentenceWordMap[this.state.sentenceIndex];
+            if (sentenceMap) {
+              this.state.focusIndex = sentenceMap.startWordIndex;
+            }
+            this.renderer.render(this.state);
+            saveStateDebounced();
+          }
+        }
       } else {
+        // Word mode
         if (event.deltaY > 0) {
           if (this.state.focusIndex > 0) {
             this.state.focusIndex--;
@@ -1471,6 +1757,7 @@ function saveState() {
       mode: engine.state.mode,
       scrollOffset: engine.state.scrollOffset,
       focusIndex: engine.state.focusIndex,
+      sentenceIndex: engine.state.sentenceIndex,
       wpm: CONFIG.wpm
     } : null,
     pdf: pdfViewer && pdfViewer.pdfDoc ? {
@@ -1478,7 +1765,11 @@ function saveState() {
       highlightingActive: pdfViewer.highlightingActive,
       currentHighlightIndex: pdfViewer.currentHighlightIndex,
       highlightWPM: pdfViewer.highlightWPM
-    } : null
+    } : null,
+    ui: {
+      booksPanelOpen: document.getElementById('books')?.classList.contains('open') || false,
+      controlsPanelOpen: document.getElementById('controls-panel')?.classList.contains('open') || false
+    }
   };
 
   try {
@@ -1809,6 +2100,7 @@ async function restoreState(savedState) {
       engine.state.mode = savedState.readfast.mode;
       engine.state.scrollOffset = savedState.readfast.scrollOffset;
       engine.state.focusIndex = savedState.readfast.focusIndex;
+      engine.state.sentenceIndex = savedState.readfast.sentenceIndex || 0;
 
       if (savedState.readfast.wpm) {
         CONFIG.wpm = savedState.readfast.wpm;
@@ -1872,12 +2164,21 @@ async function restoreState(savedState) {
 // HAMBURGER MENUS
 // =============================================================================
 
-function setupHamburgerMenu() {
+function setupHamburgerMenu(initialState = false) {
   const hamburgerBtn = document.getElementById('hamburger-btn');
   const booksPanel = document.getElementById('books');
   const viewerWrapper = document.getElementById('viewer-wrapper');
+  const controlsPanel = document.getElementById('controls-panel');
+  const controlsHamburgerBtn = document.getElementById('controls-hamburger-btn');
 
-  let isOpen = false;
+  let isOpen = initialState;
+
+  // Apply initial state
+  if (isOpen) {
+    hamburgerBtn.classList.add('active');
+    booksPanel.classList.add('open');
+    viewerWrapper.classList.add('books-open');
+  }
 
   hamburgerBtn.addEventListener('click', () => {
     isOpen = !isOpen;
@@ -1891,27 +2192,40 @@ function setupHamburgerMenu() {
       booksPanel.classList.remove('open');
       viewerWrapper.classList.remove('books-open');
     }
+    saveState();
   });
 
-  // Close menu when clicking outside
+  // Close menu when clicking outside (but not when clicking on the other panel or its button)
   document.addEventListener('click', (e) => {
     if (isOpen &&
         !booksPanel.contains(e.target) &&
-        !hamburgerBtn.contains(e.target)) {
+        !hamburgerBtn.contains(e.target) &&
+        !controlsPanel.contains(e.target) &&
+        !controlsHamburgerBtn.contains(e.target)) {
       isOpen = false;
       hamburgerBtn.classList.remove('active');
       booksPanel.classList.remove('open');
       viewerWrapper.classList.remove('books-open');
+      saveState();
     }
   });
 }
 
-function setupControlsHamburgerMenu() {
+function setupControlsHamburgerMenu(initialState = false) {
   const controlsHamburgerBtn = document.getElementById('controls-hamburger-btn');
   const controlsPanel = document.getElementById('controls-panel');
   const viewerWrapper = document.getElementById('viewer-wrapper');
+  const booksPanel = document.getElementById('books');
+  const hamburgerBtn = document.getElementById('hamburger-btn');
 
-  let isOpen = false;
+  let isOpen = initialState;
+
+  // Apply initial state
+  if (isOpen) {
+    controlsHamburgerBtn.classList.add('active');
+    controlsPanel.classList.add('open');
+    viewerWrapper.classList.add('controls-open');
+  }
 
   controlsHamburgerBtn.addEventListener('click', () => {
     isOpen = !isOpen;
@@ -1925,17 +2239,21 @@ function setupControlsHamburgerMenu() {
       controlsPanel.classList.remove('open');
       viewerWrapper.classList.remove('controls-open');
     }
+    saveState();
   });
 
-  // Close menu when clicking outside
+  // Close menu when clicking outside (but not when clicking on the other panel or its button)
   document.addEventListener('click', (e) => {
     if (isOpen &&
         !controlsPanel.contains(e.target) &&
-        !controlsHamburgerBtn.contains(e.target)) {
+        !controlsHamburgerBtn.contains(e.target) &&
+        !booksPanel.contains(e.target) &&
+        !hamburgerBtn.contains(e.target)) {
       isOpen = false;
       controlsHamburgerBtn.classList.remove('active');
       controlsPanel.classList.remove('open');
       viewerWrapper.classList.remove('controls-open');
+      saveState();
     }
   });
 }
@@ -1971,15 +2289,18 @@ function setupControlsHamburgerMenu() {
       tabReal.addEventListener('click', () => switchView('real'));
     }
 
-    // Setup hamburger menus
-    setupHamburgerMenu();
-    setupControlsHamburgerMenu();
-
     // Load books from server
     await loadBooks();
 
     // Try to restore saved state
     const savedState = loadState();
+
+    // Setup hamburger menus with saved state
+    const booksPanelOpen = savedState?.ui?.booksPanelOpen || false;
+    const controlsPanelOpen = savedState?.ui?.controlsPanelOpen || false;
+    setupHamburgerMenu(booksPanelOpen);
+    setupControlsHamburgerMenu(controlsPanelOpen);
+
     if (savedState) {
       const restored = await restoreState(savedState);
       if (!restored) {
