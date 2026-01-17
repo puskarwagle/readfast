@@ -1328,6 +1328,9 @@ class PDFViewer {
     this.highlightIntervalId = null;
     this.currentScale = 1;
     this.highlightRects = []; // Store highlight rectangle elements
+    this.zoomLevel = 1;
+    this.minZoom = 0.5;
+    this.maxZoom = 3;
 
     this._boundHandleKeydown = this._handleKeydown.bind(this);
     this._boundHandleWheel = this._handleWheel.bind(this);
@@ -1336,6 +1339,9 @@ class PDFViewer {
     this._boundToggleHighlight = () => this.toggleHighlighting();
     this._boundAdvanceHighlight = this._advanceHighlight.bind(this);
     this._boundHandleWPMChange = this._handleWPMChange.bind(this);
+    this._boundZoomIn = () => this.zoomIn();
+    this._boundZoomOut = () => this.zoomOut();
+    this._boundHandlePinch = this._handlePinch.bind(this);
   }
 
   _handleWPMChange(event) {
@@ -1399,7 +1405,8 @@ class PDFViewer {
       const viewport = page.getViewport({ scale: 1 });
       const scaleX = containerWidth / viewport.width;
       const scaleY = containerHeight / viewport.height;
-      const scale = Math.min(scaleX, scaleY);
+      const baseScale = Math.min(scaleX, scaleY);
+      const scale = baseScale * this.zoomLevel;
 
       const scaledViewport = page.getViewport({ scale });
       this.currentScale = scale;
@@ -1645,6 +1652,18 @@ class PDFViewer {
   }
 
   _handleWheel(event) {
+    // Check if it's a pinch zoom gesture (ctrl/cmd + wheel)
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      const delta = -event.deltaY;
+      if (delta > 0) {
+        this.zoomIn(0.1);
+      } else {
+        this.zoomOut(0.1);
+      }
+      return;
+    }
+
     event.preventDefault();
 
     if (event.deltaY > 0) {
@@ -1654,6 +1673,30 @@ class PDFViewer {
     }
   }
 
+  _handlePinch(event) {
+    event.preventDefault();
+    if (event.scale) {
+      const newZoom = this.zoomLevel * event.scale;
+      this.setZoom(newZoom);
+    }
+  }
+
+  zoomIn(amount = 0.2) {
+    this.setZoom(this.zoomLevel + amount);
+  }
+
+  zoomOut(amount = 0.2) {
+    this.setZoom(this.zoomLevel - amount);
+  }
+
+  setZoom(newZoom) {
+    this.zoomLevel = Math.max(this.minZoom, Math.min(newZoom, this.maxZoom));
+    if (this.currentPage > 0) {
+      this.renderPage(this.currentPage);
+    }
+    saveState();
+  }
+
   setupEventListeners() {
     if (this.listenersActive) return;
 
@@ -1661,12 +1704,17 @@ class PDFViewer {
 
     if (this.container) {
       this.container.addEventListener('wheel', this._boundHandleWheel, { passive: false });
+      this.container.addEventListener('gesturestart', this._boundHandlePinch, { passive: false });
+      this.container.addEventListener('gesturechange', this._boundHandlePinch, { passive: false });
+      this.container.addEventListener('gestureend', this._boundHandlePinch, { passive: false });
     }
 
     const prevBtn = document.getElementById('prev-page');
     const nextBtn = document.getElementById('next-page');
     const highlightBtn = document.getElementById('pdf-highlight-play');
     const wpmInput = document.getElementById('pdf-wpm-input');
+    const zoomInBtn = document.getElementById('zoom-in');
+    const zoomOutBtn = document.getElementById('zoom-out');
 
     if (prevBtn) {
       prevBtn.addEventListener('click', this._boundPrevPage);
@@ -1684,6 +1732,14 @@ class PDFViewer {
       wpmInput.addEventListener('input', this._boundHandleWPMChange);
     }
 
+    if (zoomInBtn) {
+      zoomInBtn.addEventListener('click', this._boundZoomIn);
+    }
+
+    if (zoomOutBtn) {
+      zoomOutBtn.addEventListener('click', this._boundZoomOut);
+    }
+
     this.listenersActive = true;
   }
 
@@ -1694,12 +1750,17 @@ class PDFViewer {
 
     if (this.container) {
       this.container.removeEventListener('wheel', this._boundHandleWheel);
+      this.container.removeEventListener('gesturestart', this._boundHandlePinch);
+      this.container.removeEventListener('gesturechange', this._boundHandlePinch);
+      this.container.removeEventListener('gestureend', this._boundHandlePinch);
     }
 
     const prevBtn = document.getElementById('prev-page');
     const nextBtn = document.getElementById('next-page');
     const highlightBtn = document.getElementById('pdf-highlight-play');
     const wpmInput = document.getElementById('pdf-wpm-input');
+    const zoomInBtn = document.getElementById('zoom-in');
+    const zoomOutBtn = document.getElementById('zoom-out');
 
     if (prevBtn) {
       prevBtn.removeEventListener('click', this._boundPrevPage);
@@ -1715,6 +1776,14 @@ class PDFViewer {
 
     if (wpmInput) {
       wpmInput.removeEventListener('input', this._boundHandleWPMChange);
+    }
+
+    if (zoomInBtn) {
+      zoomInBtn.removeEventListener('click', this._boundZoomIn);
+    }
+
+    if (zoomOutBtn) {
+      zoomOutBtn.removeEventListener('click', this._boundZoomOut);
     }
 
     this.listenersActive = false;
@@ -1764,16 +1833,19 @@ function saveState() {
       currentPage: pdfViewer.currentPage,
       highlightingActive: pdfViewer.highlightingActive,
       currentHighlightIndex: pdfViewer.currentHighlightIndex,
-      highlightWPM: pdfViewer.highlightWPM
+      highlightWPM: pdfViewer.highlightWPM,
+      zoomLevel: pdfViewer.zoomLevel
     } : null,
     ui: {
       booksPanelOpen: document.getElementById('books')?.classList.contains('open') || false,
-      controlsPanelOpen: document.getElementById('controls-panel')?.classList.contains('open') || false
+      controlsPanelOpen: document.getElementById('controls-panel')?.classList.contains('open') || false,
+      textColor: currentTextColor,
+      bgColor: currentBgColor
     }
   };
 
   try {
-    localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(state));
+    sessionStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(state));
   } catch (error) {
     console.warn('Failed to save state:', error);
   }
@@ -1781,7 +1853,7 @@ function saveState() {
 
 function loadState() {
   try {
-    const stateJson = localStorage.getItem(STATE_STORAGE_KEY);
+    const stateJson = sessionStorage.getItem(STATE_STORAGE_KEY);
     if (!stateJson) return null;
 
     return JSON.parse(stateJson);
@@ -1793,7 +1865,7 @@ function loadState() {
 
 function clearState() {
   try {
-    localStorage.removeItem(STATE_STORAGE_KEY);
+    sessionStorage.removeItem(STATE_STORAGE_KEY);
   } catch (error) {
     console.warn('Failed to clear state:', error);
   }
@@ -2130,7 +2202,32 @@ async function restoreState(savedState) {
         pdfViewer.currentHighlightIndex = savedState.pdf.currentHighlightIndex;
       }
 
+      if (savedState.pdf.zoomLevel !== undefined) {
+        pdfViewer.zoomLevel = savedState.pdf.zoomLevel;
+      }
+
       // Note: We don't auto-resume highlighting, user must click play
+    }
+
+    // Restore colors
+    if (savedState.ui) {
+      if (savedState.ui.textColor) {
+        currentTextColor = savedState.ui.textColor;
+        const textColorInput = document.getElementById('text-color');
+        if (textColorInput) {
+          textColorInput.value = currentTextColor;
+        }
+      }
+
+      if (savedState.ui.bgColor) {
+        currentBgColor = savedState.ui.bgColor;
+        const bgColorInput = document.getElementById('bg-color');
+        if (bgColorInput) {
+          bgColorInput.value = currentBgColor;
+        }
+      }
+
+      applyColors();
     }
 
     // Restore view (skip sync to preserve restored positions)
@@ -2195,20 +2292,7 @@ function setupHamburgerMenu(initialState = false) {
     saveState();
   });
 
-  // Close menu when clicking outside (but not when clicking on the other panel or its button)
-  document.addEventListener('click', (e) => {
-    if (isOpen &&
-        !booksPanel.contains(e.target) &&
-        !hamburgerBtn.contains(e.target) &&
-        !controlsPanel.contains(e.target) &&
-        !controlsHamburgerBtn.contains(e.target)) {
-      isOpen = false;
-      hamburgerBtn.classList.remove('active');
-      booksPanel.classList.remove('open');
-      viewerWrapper.classList.remove('books-open');
-      saveState();
-    }
-  });
+  // Removed auto-close on outside click
 }
 
 function setupControlsHamburgerMenu(initialState = false) {
@@ -2242,20 +2326,46 @@ function setupControlsHamburgerMenu(initialState = false) {
     saveState();
   });
 
-  // Close menu when clicking outside (but not when clicking on the other panel or its button)
-  document.addEventListener('click', (e) => {
-    if (isOpen &&
-        !controlsPanel.contains(e.target) &&
-        !controlsHamburgerBtn.contains(e.target) &&
-        !booksPanel.contains(e.target) &&
-        !hamburgerBtn.contains(e.target)) {
-      isOpen = false;
-      controlsHamburgerBtn.classList.remove('active');
-      controlsPanel.classList.remove('open');
-      viewerWrapper.classList.remove('controls-open');
-      saveState();
-    }
+  // Removed auto-close on outside click
+}
+
+// =============================================================================
+// COLOR CONTROLS
+// =============================================================================
+
+let currentTextColor = '#ffffff';
+let currentBgColor = '#000000';
+
+function applyColors() {
+  document.body.style.backgroundColor = currentBgColor;
+  document.body.style.color = currentTextColor;
+
+  // Update word colors
+  const words = document.querySelectorAll('.word:not(.past):not(.future)');
+  words.forEach(word => {
+    word.style.color = currentTextColor;
   });
+
+  saveState();
+}
+
+function setupColorControls() {
+  const textColorInput = document.getElementById('text-color');
+  const bgColorInput = document.getElementById('bg-color');
+
+  if (textColorInput) {
+    textColorInput.addEventListener('input', (e) => {
+      currentTextColor = e.target.value;
+      applyColors();
+    });
+  }
+
+  if (bgColorInput) {
+    bgColorInput.addEventListener('input', (e) => {
+      currentBgColor = e.target.value;
+      applyColors();
+    });
+  }
 }
 
 // =============================================================================
@@ -2291,6 +2401,9 @@ function setupControlsHamburgerMenu(initialState = false) {
 
     // Load books from server
     await loadBooks();
+
+    // Setup color controls
+    setupColorControls();
 
     // Try to restore saved state
     const savedState = loadState();
