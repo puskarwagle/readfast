@@ -1139,7 +1139,6 @@ class PDFViewer {
     this._boundAdvanceHighlight = this._advanceHighlight.bind(this);
     this._boundZoomIn = () => this.zoomIn();
     this._boundZoomOut = () => this.zoomOut();
-    this._boundHandlePinch = this._handlePinch.bind(this);
   }
 
   async loadPDF(filename, startPage = 1) {
@@ -1218,9 +1217,13 @@ class PDFViewer {
   }
 
   _calculateOptimalScale(viewport, containerWidth, containerHeight) {
+    // Base scale to fit page in container
     const scaleX = containerWidth / viewport.width;
     const scaleY = containerHeight / viewport.height;
-    return Math.min(scaleX, scaleY) * this.zoomLevel;
+    const baseScale = Math.min(scaleX, scaleY);
+
+    // Apply zoom level
+    return baseScale * this.zoomLevel;
   }
 
   _configureCanvas(viewport) {
@@ -1486,37 +1489,16 @@ class PDFViewer {
     }
   }
 
-  _handlePinch(event) {
-    event.preventDefault();
-    if (event.scale) {
-      const newZoom = this.zoomLevel * event.scale;
-      this.setZoom(newZoom);
-    }
-  }
-
-  setZoom(newZoom) {
-    const oldZoom = this.zoomLevel;
-    this.zoomLevel = Math.max(this.minZoom, Math.min(newZoom, this.maxZoom));
-    
-    // Only re-render if zoom actually changed
-    if (oldZoom !== this.zoomLevel && this.currentPage > 0) {
-      // Force a fresh render
-      this.isRendering = false; // Reset the flag in case it's stuck
-      this.renderPage(this.currentPage);
-    }
-    
+  zoomIn() {
+    this.zoomLevel = Math.min(this.zoomLevel + 0.25, this.maxZoom);
+    this.renderPage(this.currentPage);
     saveState();
   }
 
-  // Also update these methods for smoother zooming
-  zoomIn(amount = 0.2) {
-    const newZoom = this.zoomLevel + amount;
-    this.setZoom(newZoom);
-  }
-
-  zoomOut(amount = 0.2) {
-    const newZoom = this.zoomLevel - amount;
-    this.setZoom(newZoom);
+  zoomOut() {
+    this.zoomLevel = Math.max(this.zoomLevel - 0.25, this.minZoom);
+    this.renderPage(this.currentPage);
+    saveState();
   }
 
   setupEventListeners() {
@@ -1526,9 +1508,6 @@ class PDFViewer {
 
     if (this.container) {
       this.container.addEventListener('wheel', this._boundHandleWheel, { passive: false });
-      this.container.addEventListener('gesturestart', this._boundHandlePinch, { passive: false });
-      this.container.addEventListener('gesturechange', this._boundHandlePinch, { passive: false });
-      this.container.addEventListener('gestureend', this._boundHandlePinch, { passive: false });
     }
 
     const prevBtn = document.getElementById('prev-page');
@@ -1551,10 +1530,14 @@ class PDFViewer {
 
     if (zoomInBtn) {
       zoomInBtn.addEventListener('click', this._boundZoomIn);
+    } else {
+      console.warn('PDFViewer: zoom-in button not found');
     }
 
     if (zoomOutBtn) {
       zoomOutBtn.addEventListener('click', this._boundZoomOut);
+    } else {
+      console.warn('PDFViewer: zoom-out button not found');
     }
 
     this.listenersActive = true;
@@ -1567,9 +1550,6 @@ class PDFViewer {
 
     if (this.container) {
       this.container.removeEventListener('wheel', this._boundHandleWheel);
-      this.container.removeEventListener('gesturestart', this._boundHandlePinch);
-      this.container.removeEventListener('gesturechange', this._boundHandlePinch);
-      this.container.removeEventListener('gestureend', this._boundHandlePinch);
     }
 
     const prevBtn = document.getElementById('prev-page');
@@ -1779,6 +1759,13 @@ function switchView(view, skipSync = false) {
     // Setup PDF event listeners
     if (pdfViewer) {
       pdfViewer.setupEventListeners();
+    }
+
+    // Ensure controls panel is open for easy access to zoom buttons
+    const controlsPanel = document.getElementById('controls-panel');
+    const controlsHamburger = document.getElementById('controls-hamburger-btn');
+    if (controlsPanel && controlsHamburger && !controlsPanel.classList.contains('open')) {
+      controlsHamburger.click();
     }
 
     if (pdfViewer && pdfViewer.pdfDoc) {
@@ -2285,10 +2272,21 @@ function setupColorControls() {
       const restored = await restoreState(savedState);
       if (!restored) {
         console.log('Could not restore saved state, starting fresh');
+        // Initialize the default view properly
+        switchView(currentView, true);
       }
+    } else {
+      // No saved state - initialize default view
+      switchView(currentView, true);
     }
 
     console.log('Speed Reader initialized successfully');
+
+    // Validate initialization state
+    if (currentView === 'real' && pdfViewer && !pdfViewer.listenersActive) {
+      console.warn('⚠️ PDF viewer is in Real view but event listeners are not active');
+      console.warn('This may cause zoom buttons and navigation to not work');
+    }
   } catch (error) {
     console.error('Failed to initialize Speed Reader:', error);
 
