@@ -12,6 +12,7 @@ const API_URL = '/api';
 
 const CONFIG = {
   wpm: 250,
+  pps: 200,
   wordSpacing: 8,
   linesAbove: 12,
   linesBelow: 12,
@@ -701,10 +702,7 @@ class WordMarqueeEngine {
     this.animationId = null;
     this.intervalId = null;
 
-    const wordInterval = 60000 / this.config.wpm;
-    const totalWidth = this.metrics.getLastWordCenter();
-    const totalWords = this.metrics.getWordCount();
-    this.pixelsPerMs = (totalWidth / totalWords) / wordInterval;
+    this.pixelsPerMs = this.config.pps / 1000;
 
     this.dragState = {
       isDragging: false,
@@ -726,6 +724,31 @@ class WordMarqueeEngine {
     this._boundHandleMouseUp = this._handleMouseUp.bind(this);
     this._boundNextPage = this._nextPage.bind(this);
     this._boundPrevPage = this._prevPage.bind(this);
+  }
+
+  setSpeed(value) {
+    if (this.state.mode === 'smooth') {
+      this.config.pps = value;
+      this.pixelsPerMs = value / 1000;
+    } else {
+      this.config.wpm = value;
+      // Restart interval/timeout if playing
+      if (this.state.isPlaying) {
+        if (this.state.mode === 'word') {
+          clearInterval(this.intervalId);
+          const wordInterval = 60000 / this.config.wpm;
+          this.intervalId = setInterval(this._boundAdvanceWord, wordInterval);
+        } else if (this.state.mode === 'sentence') {
+          // No simple interval for sentence mode as it varies per sentence
+          // But the next advanceSentence call will use the new WPM
+        }
+      }
+    }
+    saveState();
+  }
+
+  getSpeed() {
+    return this.state.mode === 'smooth' ? this.config.pps : this.config.wpm;
   }
 
   _initializeSentences() {
@@ -785,10 +808,7 @@ class WordMarqueeEngine {
     };
 
     // Recalculate speed
-    const wordInterval = 60000 / this.config.wpm;
-    const totalWidth = this.metrics.getLastWordCenter();
-    const totalWords = this.metrics.getWordCount();
-    this.pixelsPerMs = (totalWidth / totalWords) / wordInterval;
+    this.pixelsPerMs = this.config.pps / 1000;
 
     // Re-setup event listeners
     this.setupEventListeners();
@@ -796,6 +816,7 @@ class WordMarqueeEngine {
     // Render initial state
     this.renderer.render(this.state);
     this.renderer.updateModeIndicator(this.state.mode);
+    this.updateSpeedUI();
     this.renderer.updatePlayPauseButton(false);
 
     console.log('Text loaded:', words.length, 'words,', this.sentences.length, 'sentences');
@@ -887,6 +908,7 @@ class WordMarqueeEngine {
       }
 
       this.renderer.updateModeIndicator(this.state.mode);
+      this.updateSpeedUI();
       this.renderer.render(this.state);
 
       if (wasPlaying) {
@@ -896,6 +918,17 @@ class WordMarqueeEngine {
       saveState();
     } catch (error) {
       console.error('WordMarqueeEngine: Error toggling mode', error);
+    }
+  }
+
+  updateSpeedUI() {
+    const slider = document.getElementById('speed-slider');
+    const label = document.getElementById('speed-value');
+    if (slider && label) {
+      const speed = this.getSpeed();
+      slider.value = speed;
+      const unit = this.state.mode === 'smooth' ? 'px/s' : 'wpm';
+      label.textContent = `${speed} ${unit}`;
     }
   }
 
@@ -1257,10 +1290,19 @@ class WordMarqueeEngine {
     const playPauseBtn = document.getElementById('play-pause');
     const nextPageBtn = document.getElementById('readfast-next');
     const prevPageBtn = document.getElementById('readfast-prev');
+    const speedSlider = document.getElementById('speed-slider');
     const container = this.renderer.elements.container;
 
     if (toggleModeBtn) {
       this._addEventListener(toggleModeBtn, 'click', () => this.toggleMode());
+    }
+
+    if (speedSlider) {
+      this._addEventListener(speedSlider, 'input', (e) => {
+        const value = parseInt(e.target.value);
+        this.setSpeed(value);
+        this.updateSpeedUI();
+      });
     }
 
     if (playPauseBtn) {
@@ -1849,7 +1891,8 @@ function saveState() {
       scrollOffset: engine.state.scrollOffset,
       focusIndex: engine.state.focusIndex,
       sentenceIndex: engine.state.sentenceIndex,
-      wpm: CONFIG.wpm
+      wpm: CONFIG.wpm,
+      pps: CONFIG.pps
     } : null,
     pdf: pdfViewer && pdfViewer.pdfDoc ? {
       currentPage: pdfViewer.currentPage,
@@ -2192,13 +2235,14 @@ async function restoreState(savedState) {
 
       if (savedState.readfast.wpm) {
         CONFIG.wpm = savedState.readfast.wpm;
-
-        // Recalculate speed
-        const wordInterval = 60000 / CONFIG.wpm;
-        const totalWidth = engine.metrics.getLastWordCenter();
-        const totalWords = engine.metrics.getWordCount();
-        engine.pixelsPerMs = (totalWidth / totalWords) / wordInterval;
       }
+      if (savedState.readfast.pps) {
+        CONFIG.pps = savedState.readfast.pps;
+      }
+
+      // Update engine speed
+      engine.pixelsPerMs = CONFIG.pps / 1000;
+      engine.updateSpeedUI();
 
       engine.renderer.updateModeIndicator(engine.state.mode);
       engine.renderer.render(engine.state);
