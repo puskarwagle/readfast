@@ -430,7 +430,7 @@ class RenderEngine {
     sentenceDiv.style.textAlign = 'center';
     sentenceDiv.style.fontSize = '24px';
     sentenceDiv.style.lineHeight = '1.6';
-    sentenceDiv.style.color = 'white';
+    sentenceDiv.style.color = 'var(--text-color)';
     sentenceDiv.style.padding = '20px';
 
     // Highlight all words in the sentence
@@ -2519,7 +2519,7 @@ function setupColorControls() {
 
     const displayArea = document.getElementById('display-area');
     if (displayArea) {
-      displayArea.innerHTML = '<div style="color: white; padding: 20px;">Error initializing reader. Please check console.</div>';
+      displayArea.innerHTML = '<div style="color: var(--text-color); padding: 20px;">Error initializing reader. Please check console.</div>';
     }
   }
 })();
