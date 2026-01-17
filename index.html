@@ -11,14 +11,11 @@
 </head>
 <body>
 <!-- SVG Filter for PDF recoloring -->
-<svg style="display: none; height: 0; width: 0; position: absolute;">
+<svg style="visibility: hidden; height: 0; width: 0; position: absolute; pointer-events: none;">
   <defs>
     <filter id="pdf-recolor" color-interpolation-filters="sRGB">
       <feColorMatrix id="pdf-recolor-matrix" type="matrix" 
-        values="1 0 0 0 0
-                0 1 0 0 0
-                0 0 1 0 0
-                0 0 0 1 0"/>
+        values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
     </filter>
   </defs>
 </svg>
