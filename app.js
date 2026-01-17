@@ -4,7 +4,7 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 // API Configuration
-const API_URL = 'http://localhost:3000/api';
+const API_URL = '/api';
 
 // =============================================================================
 // CONFIGURATION
@@ -31,6 +31,9 @@ const CONFIG = {
     wheelPixelDelta: 40,
     dragSensitivity: 1.0,
     autoResumeDelay: 0
+  },
+  paging: {
+    wordsPerPage: 300
   }
 };
 
@@ -119,7 +122,14 @@ const SAMPLE_WORDS = [
 // WORDMETRICS CLASS
 // =============================================================================
 
+/**
+ * Handles word measurements and position calculations.
+ */
 class WordMetrics {
+  /**
+   * @param {string[]} words - Array of words to process
+   * @param {Object} config - Configuration object
+   */
   constructor(words, config) {
     if (!Array.isArray(words) || words.length === 0) {
       throw new Error('WordMetrics: words must be a non-empty array');
@@ -134,6 +144,16 @@ class WordMetrics {
       throw new Error('WordMetrics: measure element not found');
     }
 
+    /**
+     * @type {Array<{
+     *   word: string,
+     *   index: number,
+     *   startPosition: number,
+     *   width: number,
+     *   middleLetterOffset: number,
+     *   centerPosition: number
+     * }>}
+     */
     this.wordPositions = this._calculateWordPositions();
   }
 
@@ -226,6 +246,25 @@ class WordMetrics {
   getLastWordCenter() {
     if (this.wordPositions.length === 0) return 0;
     return this.wordPositions[this.wordPositions.length - 1].centerPosition;
+  }
+
+  getClosestWordIndex(scrollOffset) {
+    if (this.wordPositions.length === 0) return 0;
+
+    let closestIndex = 0;
+    let minDistance = Math.abs(scrollOffset - this.wordPositions[0].centerPosition);
+
+    for (let i = 1; i < this.wordPositions.length; i++) {
+      const distance = Math.abs(scrollOffset - this.wordPositions[i].centerPosition);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = i;
+      } else {
+        break;
+      }
+    }
+
+    return closestIndex;
   }
 
   clearCache() {
@@ -611,8 +650,8 @@ class RenderEngine {
 
     const totalWords = this.metrics.getWordCount();
 
-    // Calculate approximate page (assuming ~300 words per page)
-    const wordsPerPage = 300;
+    // Calculate approximate page
+    const wordsPerPage = this.config.paging.wordsPerPage;
     const currentPage = Math.floor(currentWordIndex / wordsPerPage) + 1;
     const totalPages = Math.ceil(totalWords / wordsPerPage);
 
@@ -817,7 +856,7 @@ class WordMarqueeEngine {
 
     try {
       const currentFocusIndex = this.state.mode === 'smooth'
-        ? this._findClosestWordIndex(this.state.scrollOffset)
+        ? this.metrics.getClosestWordIndex(this.state.scrollOffset)
         : this.state.focusIndex;
 
       // Cycle through modes: smooth -> word -> sentence -> smooth
@@ -894,11 +933,11 @@ class WordMarqueeEngine {
     }
 
     // Calculate words per page
-    const wordsPerPage = 300;
+    const wordsPerPage = this.config.paging.wordsPerPage;
     const totalWords = this.metrics.getWordCount();
 
     const currentWordIndex = this.state.mode === 'smooth'
-      ? this._findClosestWordIndex(this.state.scrollOffset)
+      ? this.metrics.getClosestWordIndex(this.state.scrollOffset)
       : this.state.focusIndex;
 
     // Calculate next page start
@@ -937,10 +976,10 @@ class WordMarqueeEngine {
     }
 
     // Calculate words per page
-    const wordsPerPage = 300;
+    const wordsPerPage = this.config.paging.wordsPerPage;
 
     const currentWordIndex = this.state.mode === 'smooth'
-      ? this._findClosestWordIndex(this.state.scrollOffset)
+      ? this.metrics.getClosestWordIndex(this.state.scrollOffset)
       : this.state.focusIndex;
 
     // Calculate previous page start
@@ -960,23 +999,6 @@ class WordMarqueeEngine {
       this.renderer.render(this.state);
       saveState();
     }
-  }
-
-  _findClosestWordIndex(scrollOffset) {
-    let closestIndex = 0;
-    let minDistance = Math.abs(scrollOffset - this.metrics.wordPositions[0].centerPosition);
-
-    for (let i = 1; i < this.metrics.wordPositions.length; i++) {
-      const distance = Math.abs(scrollOffset - this.metrics.wordPositions[i].centerPosition);
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestIndex = i;
-      } else {
-        break;
-      }
-    }
-
-    return closestIndex;
   }
 
   _animateSmooth(timestamp) {
@@ -1980,7 +2002,7 @@ function switchView(view, skipSync = false) {
       // Sync page position and highlight position based on word position (unless skipping)
       if (!skipSync && engine && engine.metrics) {
         const currentWordIndex = engine.state.mode === 'smooth'
-          ? findClosestWordIndex(engine.state.scrollOffset, engine.metrics)
+          ? engine.metrics.getClosestWordIndex(engine.state.scrollOffset)
           : engine.state.focusIndex;
 
         const totalWords = engine.metrics.getWordCount();
@@ -2002,23 +2024,6 @@ function switchView(view, skipSync = false) {
       engine.stop();
     }
   }
-}
-
-function findClosestWordIndex(scrollOffset, metrics) {
-  let closestIndex = 0;
-  let minDistance = Math.abs(scrollOffset - metrics.wordPositions[0].centerPosition);
-
-  for (let i = 1; i < metrics.wordPositions.length; i++) {
-    const distance = Math.abs(scrollOffset - metrics.wordPositions[i].centerPosition);
-    if (distance < minDistance) {
-      minDistance = distance;
-      closestIndex = i;
-    } else {
-      break;
-    }
-  }
-
-  return closestIndex;
 }
 
 async function loadBooks() {
@@ -2055,6 +2060,9 @@ function createBookCard(book) {
   const card = document.createElement('div');
   card.className = 'book-card';
   card.dataset.filename = book.filename;
+  card.setAttribute('role', 'button');
+  card.setAttribute('tabindex', '0');
+  card.setAttribute('aria-label', `Select book: ${book.title}`);
 
   const icon = book.type === 'pdf' ? '📕' : '📘';
 
@@ -2067,6 +2075,14 @@ function createBookCard(book) {
   `;
 
   card.addEventListener('click', () => selectBook(book, card));
+
+  // Add keyboard support for accessibility
+  card.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      selectBook(book, card);
+    }
+  });
 
   return card;
 }
@@ -2336,15 +2352,44 @@ function setupControlsHamburgerMenu(initialState = false) {
 let currentTextColor = '#ffffff';
 let currentBgColor = '#000000';
 
-function applyColors() {
-  document.body.style.backgroundColor = currentBgColor;
-  document.body.style.color = currentTextColor;
+function hexToRgb(hex) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16) / 255,
+    g: parseInt(result[2], 16) / 255,
+    b: parseInt(result[3], 16) / 255
+  } : { r: 0, g: 0, b: 0 };
+}
 
-  // Update word colors
-  const words = document.querySelectorAll('.word:not(.past):not(.future)');
-  words.forEach(word => {
-    word.style.color = currentTextColor;
-  });
+function applyColors() {
+  // Update CSS Variables for ReadFast mode
+  document.documentElement.style.setProperty('--bg-color', currentBgColor);
+  document.documentElement.style.setProperty('--text-color', currentTextColor);
+
+  // Update SVG Filter for Real PDF mode
+  const matrix = document.getElementById('pdf-recolor-matrix');
+  if (matrix) {
+    const bg = hexToRgb(currentBgColor);
+    const text = hexToRgb(currentTextColor);
+
+    // Map White (Paper) -> BgColor
+    // Map Black (Text) -> TextColor
+    // Out = In * (Bg - Text) + Text
+    
+    const rScale = bg.r - text.r;
+    const gScale = bg.g - text.g;
+    const bScale = bg.b - text.b;
+
+    // Use a clean matrix string
+    const value = [
+      rScale, 0, 0, 0, text.r,
+      0, gScale, 0, 0, text.g,
+      0, 0, bScale, 0, text.b,
+      0, 0, 0, 1, 0
+    ].join(' ');
+
+    matrix.setAttribute('values', value);
+  }
 
   saveState();
 }
@@ -2404,6 +2449,9 @@ function setupColorControls() {
 
     // Setup color controls
     setupColorControls();
+    
+    // Apply default colors immediately
+    applyColors();
 
     // Try to restore saved state
     const savedState = loadState();

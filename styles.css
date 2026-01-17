@@ -1,7 +1,13 @@
+:root {
+  --bg-color: #000000;
+  --text-color: #ffffff;
+}
+
 body {
   margin: 0;
   padding: 0;
-  background: black;
+  background: var(--bg-color);
+  color: var(--text-color);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -289,7 +295,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: black;
+  background: var(--bg-color);
   padding: 20px;
   box-sizing: border-box;
 }
@@ -305,7 +311,7 @@ body {
   max-height: calc(100vh - 80px);
   object-fit: contain;
   box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-  filter: invert(1);
+  filter: url(#pdf-recolor);
 }
 
 #pdf-text-layer {
@@ -406,16 +412,18 @@ body {
 
 .word {
   position: absolute;
-  color: white;
+  color: var(--text-color);
   transition: color 0.3s ease;
 }
 
 .word.past {
-  color: #999;
+  color: var(--text-color);
+  opacity: 0.5;
 }
 
 .word.future {
-  color: #999;
+  color: var(--text-color);
+  opacity: 0.5;
 }
 
 .middle-letter {
