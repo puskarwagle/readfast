@@ -113,6 +113,8 @@ body {
   position: relative;
   overflow: hidden;
   cursor: grab;
+  padding: 0 20px;
+  box-sizing: border-box;
 }
 
 #main-container.dragging {
@@ -473,7 +475,9 @@ class RenderEngine {
       throw new Error('RenderEngine: main-container element not found');
     }
 
-    this.containerWidth = this.elements.container.offsetWidth;
+    // Account for container padding (20px on each side)
+    const containerPadding = 40;
+    this.containerWidth = this.elements.container.offsetWidth - containerPadding;
     this.centerX = this.containerWidth / 2;
   }
 
@@ -538,10 +542,13 @@ class RenderEngine {
         const width = this.metrics.getWordWidth(word);
         x -= width;
 
-        const wordEl = this._createWordElement(word);
-        wordEl.classList.add('past');
-        wordEl.style.left = x + 'px';
-        rowDiv.appendChild(wordEl);
+        // Skip words that would render off the left edge
+        if (x >= 0) {
+          const wordEl = this._createWordElement(word);
+          wordEl.classList.add('past');
+          wordEl.style.left = x + 'px';
+          rowDiv.appendChild(wordEl);
+        }
 
         x -= this.config.wordSpacing;
       }
@@ -562,10 +569,13 @@ class RenderEngine {
         const { word } = lineWords[i];
         const width = this.metrics.getWordWidth(word);
 
-        const wordEl = this._createWordElement(word);
-        wordEl.classList.add('future');
-        wordEl.style.left = x + 'px';
-        rowDiv.appendChild(wordEl);
+        // Skip words that would render off the right edge
+        if (x + width <= this.containerWidth) {
+          const wordEl = this._createWordElement(word);
+          wordEl.classList.add('future');
+          wordEl.style.left = x + 'px';
+          rowDiv.appendChild(wordEl);
+        }
 
         x += width + this.config.wordSpacing;
       }
@@ -623,6 +633,7 @@ class RenderEngine {
         const x = globalOffset + wordData.startPosition;
         const width = wordData.width;
 
+        // Stop if word is completely off-screen to the left
         if (x + width < 0) break;
 
         focusLinePastWords.unshift({ word: wordData.word, index: i, x });
@@ -1138,7 +1149,7 @@ class WordMarqueeEngine {
     this._addEventListener(document, 'keydown', (e) => {
       if (e.code === 'Space') {
         e.preventDefault();
-        this.toggleMode();
+        this.togglePlayPause();
       }
     });
 
