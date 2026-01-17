@@ -12,7 +12,6 @@ const API_URL = '/api';
 
 const CONFIG = {
   wpm: 250,
-  pps: 200,
   wordSpacing: 8,
   linesAbove: 12,
   linesBelow: 12,
@@ -27,11 +26,6 @@ const CONFIG = {
   },
   animation: {
     frameTimeout: 120000,
-  },
-  scrolling: {
-    wheelPixelDelta: 40,
-    dragSensitivity: 1.0,
-    autoResumeDelay: 0
   },
   paging: {
     wordsPerPage: 300
@@ -113,9 +107,9 @@ class SentenceDetector {
 // Sample text as fallback
 const SAMPLE_WORDS = [
   "Welcome", "to", "Capsicum", "Speed", "Reader", "Select", "a", "book", "from", "the", "left",
-  "sidebar", "to", "start", "reading", "You", "can", "toggle", "between", "smooth",
-  "and", "word", "modes", "using", "the", "button", "below", "Use", "your", "mouse",
-  "wheel", "or", "drag", "to", "manually", "scroll", "through", "the", "text",
+  "sidebar", "to", "start", "reading", "You", "can", "toggle", "between", "word",
+  "and", "sentence", "modes", "using", "the", "button", "below", "Use", "your", "mouse",
+  "wheel", "to", "manually", "scroll", "through", "the", "text",
   "Press", "the", "play", "button", "to", "start", "automatic", "reading"
 ];
 
@@ -247,25 +241,6 @@ class WordMetrics {
   getLastWordCenter() {
     if (this.wordPositions.length === 0) return 0;
     return this.wordPositions[this.wordPositions.length - 1].centerPosition;
-  }
-
-  getClosestWordIndex(scrollOffset) {
-    if (this.wordPositions.length === 0) return 0;
-
-    let closestIndex = 0;
-    let minDistance = Math.abs(scrollOffset - this.wordPositions[0].centerPosition);
-
-    for (let i = 1; i < this.wordPositions.length; i++) {
-      const distance = Math.abs(scrollOffset - this.wordPositions[i].centerPosition);
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestIndex = i;
-      } else {
-        break;
-      }
-    }
-
-    return closestIndex;
   }
 
   clearCache() {
@@ -481,17 +456,14 @@ class RenderEngine {
   }
 
   _prepareRenderData(state) {
-    const focusIndex = this._calculateFocusIndex(state);
+    const focusIndex = state.focusIndex;
     const focusWordData = this.metrics.getWordPositionData(focusIndex);
 
     if (!focusWordData) {
       throw new Error('Invalid focus word data');
     }
 
-    const scrollOffset = state.mode === 'smooth'
-      ? state.scrollOffset
-      : focusWordData.centerPosition;
-
+    const scrollOffset = focusWordData.centerPosition;
     const globalOffset = this.centerX - scrollOffset;
 
     return {
@@ -500,36 +472,6 @@ class RenderEngine {
       globalOffset,
       scrollOffset
     };
-  }
-
-  _calculateFocusIndex(state) {
-    if (state.mode === 'word') {
-      return state.focusIndex;
-    }
-
-    return this._findClosestWordIndexToScroll(state.scrollOffset);
-  }
-
-  _findClosestWordIndexToScroll(scrollOffset) {
-    let closestIndex = 0;
-    let minDistance = Math.abs(
-      scrollOffset - this.metrics.wordPositions[0].centerPosition
-    );
-
-    for (let i = 1; i < this.metrics.wordPositions.length; i++) {
-      const distance = Math.abs(
-        scrollOffset - this.metrics.wordPositions[i].centerPosition
-      );
-
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestIndex = i;
-      } else {
-        break;
-      }
-    }
-
-    return closestIndex;
   }
 
   _updateAccessibility(focusWordData) {
@@ -668,9 +610,7 @@ class RenderEngine {
   updateModeIndicator(mode) {
     const toggleBtn = document.getElementById('toggle-mode');
     if (toggleBtn) {
-      if (mode === 'smooth') {
-        toggleBtn.textContent = 'Smooth';
-      } else if (mode === 'word') {
+      if (mode === 'word') {
         toggleBtn.textContent = 'Word';
       } else if (mode === 'sentence') {
         toggleBtn.textContent = 'Sentence';
@@ -726,9 +666,8 @@ class WordMarqueeEngine {
     }
 
     this.state = {
-      mode: 'word', // 'word', 'smooth', or 'sentence'
+      mode: 'word', // 'word' or 'sentence'
       isPlaying: false,
-      scrollOffset: 0,
       focusIndex: 0,
       sentenceIndex: 0,
       lastTimestamp: null
@@ -737,56 +676,34 @@ class WordMarqueeEngine {
     // Initialize sentences
     this._initializeSentences();
 
-    this.animationId = null;
     this.intervalId = null;
-
-    this.pixelsPerMs = this.config.pps / 1000;
-
-    this.dragState = {
-      isDragging: false,
-      startX: 0,
-      startScrollOffset: 0,
-      startFocusIndex: 0
-    };
-
-    this.autoResumeTimer = null;
-    this.wasPlayingBeforeManualScroll = false;
     this.eventListeners = [];
 
-    this._boundAnimateSmooth = this._animateSmooth.bind(this);
     this._boundAdvanceWord = this._advanceWord.bind(this);
     this._boundAdvanceSentence = this._advanceSentence.bind(this);
     this._boundHandleWheel = this._handleWheel.bind(this);
-    this._boundHandleMouseDown = this._handleMouseDown.bind(this);
-    this._boundHandleMouseMove = this._handleMouseMove.bind(this);
-    this._boundHandleMouseUp = this._handleMouseUp.bind(this);
     this._boundNextPage = this._nextPage.bind(this);
     this._boundPrevPage = this._prevPage.bind(this);
   }
 
   setSpeed(value) {
-    if (this.state.mode === 'smooth') {
-      this.config.pps = value;
-      this.pixelsPerMs = value / 1000;
-    } else {
-      this.config.wpm = value;
-      // Restart interval/timeout if playing
-      if (this.state.isPlaying) {
-        if (this.state.mode === 'word') {
-          clearInterval(this.intervalId);
-          const wordInterval = 60000 / this.config.wpm;
-          this.intervalId = setInterval(this._boundAdvanceWord, wordInterval);
-        } else if (this.state.mode === 'sentence') {
-          // No simple interval for sentence mode as it varies per sentence
-          // But the next advanceSentence call will use the new WPM
-        }
+    this.config.wpm = value;
+    // Restart interval/timeout if playing
+    if (this.state.isPlaying) {
+      if (this.state.mode === 'word') {
+        clearInterval(this.intervalId);
+        const wordInterval = 60000 / this.config.wpm;
+        this.intervalId = setInterval(this._boundAdvanceWord, wordInterval);
+      } else if (this.state.mode === 'sentence') {
+        // No simple interval for sentence mode as it varies per sentence
+        // But the next advanceSentence call will use the new WPM
       }
     }
     saveState();
   }
 
   getSpeed() {
-    return this.state.mode === 'smooth' ? this.config.pps : this.config.wpm;
+    return this.config.wpm;
   }
 
   _initializeSentences() {
@@ -839,14 +756,10 @@ class WordMarqueeEngine {
     this.state = {
       mode: this.state.mode, // Preserve mode
       isPlaying: false,
-      scrollOffset: 0,
       focusIndex: 0,
       sentenceIndex: 0,
       lastTimestamp: null
     };
-
-    // Recalculate speed
-    this.pixelsPerMs = this.config.pps / 1000;
 
     // Re-setup event listeners
     this.setupEventListeners();
@@ -866,18 +779,10 @@ class WordMarqueeEngine {
     }
 
     try {
-      if (this.autoResumeTimer) {
-        clearTimeout(this.autoResumeTimer);
-        this.autoResumeTimer = null;
-      }
-
       this.state.isPlaying = true;
       this.renderer.updatePlayPauseButton(true);
 
-      if (this.state.mode === 'smooth') {
-        this.state.lastTimestamp = null;
-        this.animationId = requestAnimationFrame(this._boundAnimateSmooth);
-      } else if (this.state.mode === 'sentence') {
+      if (this.state.mode === 'sentence') {
         // Sentence mode: calculate interval based on sentence length
         this._advanceSentence();
       } else {
@@ -895,11 +800,6 @@ class WordMarqueeEngine {
     this.state.isPlaying = false;
     this.renderer.updatePlayPauseButton(false);
 
-    if (this.animationId) {
-      cancelAnimationFrame(this.animationId);
-      this.animationId = null;
-    }
-
     if (this.intervalId) {
       clearInterval(this.intervalId);
       clearTimeout(this.intervalId);
@@ -914,15 +814,10 @@ class WordMarqueeEngine {
     this.stop();
 
     try {
-      const currentFocusIndex = this.state.mode === 'smooth'
-        ? this.metrics.getClosestWordIndex(this.state.scrollOffset)
-        : this.state.focusIndex;
+      const currentFocusIndex = this.state.focusIndex;
 
-      // Cycle through modes: smooth -> word -> sentence -> smooth
-      if (this.state.mode === 'smooth') {
-        this.state.mode = 'word';
-        this.state.focusIndex = currentFocusIndex;
-      } else if (this.state.mode === 'word') {
+      // Cycle through modes: word -> sentence -> word
+      if (this.state.mode === 'word') {
         this.state.mode = 'sentence';
 
         // Find which sentence contains the current word
@@ -937,12 +832,8 @@ class WordMarqueeEngine {
           }
         }
       } else {
-        // sentence -> smooth
-        this.state.mode = 'smooth';
-        const wordData = this.metrics.getWordPositionData(this.state.focusIndex);
-        if (wordData) {
-          this.state.scrollOffset = wordData.centerPosition;
-        }
+        // sentence -> word
+        this.state.mode = 'word';
       }
 
       this.renderer.updateModeIndicator(this.state.mode);
@@ -965,18 +856,11 @@ class WordMarqueeEngine {
     if (slider && label) {
       const speed = this.getSpeed();
       slider.value = speed;
-      const unit = this.state.mode === 'smooth' ? 'px/s' : 'wpm';
-      label.textContent = `${speed} ${unit}`;
+      label.textContent = `${speed} wpm`;
     }
   }
 
   togglePlayPause() {
-    if (this.autoResumeTimer) {
-      clearTimeout(this.autoResumeTimer);
-      this.autoResumeTimer = null;
-    }
-    this.wasPlayingBeforeManualScroll = false;
-
     if (this.state.isPlaying) {
       this.stop();
     } else {
@@ -1006,28 +890,16 @@ class WordMarqueeEngine {
     // Calculate words per page
     const wordsPerPage = this.config.paging.wordsPerPage;
     const totalWords = this.metrics.getWordCount();
-
-    const currentWordIndex = this.state.mode === 'smooth'
-      ? this.metrics.getClosestWordIndex(this.state.scrollOffset)
-      : this.state.focusIndex;
+    const currentWordIndex = this.state.focusIndex;
 
     // Calculate next page start
     const currentPage = Math.floor(currentWordIndex / wordsPerPage);
     const nextPageStart = Math.min((currentPage + 1) * wordsPerPage, totalWords - 1);
 
     // Jump to next page
-    if (this.state.mode === 'smooth') {
-      const wordData = this.metrics.getWordPositionData(nextPageStart);
-      if (wordData) {
-        this.state.scrollOffset = wordData.centerPosition;
-        this.renderer.render(this.state);
-        saveState();
-      }
-    } else {
-      this.state.focusIndex = nextPageStart;
-      this.renderer.render(this.state);
-      saveState();
-    }
+    this.state.focusIndex = nextPageStart;
+    this.renderer.render(this.state);
+    saveState();
   }
 
   _prevPage() {
@@ -1048,60 +920,16 @@ class WordMarqueeEngine {
 
     // Calculate words per page
     const wordsPerPage = this.config.paging.wordsPerPage;
-
-    const currentWordIndex = this.state.mode === 'smooth'
-      ? this.metrics.getClosestWordIndex(this.state.scrollOffset)
-      : this.state.focusIndex;
+    const currentWordIndex = this.state.focusIndex;
 
     // Calculate previous page start
     const currentPage = Math.floor(currentWordIndex / wordsPerPage);
     const prevPageStart = Math.max((currentPage - 1) * wordsPerPage, 0);
 
     // Jump to previous page
-    if (this.state.mode === 'smooth') {
-      const wordData = this.metrics.getWordPositionData(prevPageStart);
-      if (wordData) {
-        this.state.scrollOffset = wordData.centerPosition;
-        this.renderer.render(this.state);
-        saveState();
-      }
-    } else {
-      this.state.focusIndex = prevPageStart;
-      this.renderer.render(this.state);
-      saveState();
-    }
-  }
-
-  _animateSmooth(timestamp) {
-    if (!this.state.lastTimestamp) {
-      this.state.lastTimestamp = timestamp;
-    }
-
-    const deltaTime = timestamp - this.state.lastTimestamp;
-    this.state.lastTimestamp = timestamp;
-
-    this.state.scrollOffset += this.pixelsPerMs * deltaTime;
-
-    const lastWordCenter = this.metrics.getLastWordCenter();
-    if (this.state.scrollOffset >= lastWordCenter) {
-      this.state.scrollOffset = lastWordCenter;
-      this.renderer.render(this.state);
-      this.stop();
-      saveState();
-      return;
-    }
-
-    try {
-      this.renderer.render(this.state);
-      saveStateDebounced(2000); // Save every 2 seconds during playback
-
-      if (this.state.isPlaying && this.state.mode === 'smooth') {
-        this.animationId = requestAnimationFrame(this._boundAnimateSmooth);
-      }
-    } catch (error) {
-      console.error('WordMarqueeEngine: Error in smooth animation', error);
-      this.stop();
-    }
+    this.state.focusIndex = prevPageStart;
+    this.renderer.render(this.state);
+    saveState();
   }
 
   _advanceWord() {
@@ -1151,52 +979,11 @@ class WordMarqueeEngine {
     }
   }
 
-  _startAutoResumeTimer() {
-    if (this.autoResumeTimer) {
-      clearTimeout(this.autoResumeTimer);
-      this.autoResumeTimer = null;
-    }
-
-    if (this.wasPlayingBeforeManualScroll) {
-      this.autoResumeTimer = setTimeout(() => {
-        this.autoResumeTimer = null;
-        this.wasPlayingBeforeManualScroll = false;
-        this.start();
-      }, this.config.scrolling.autoResumeDelay);
-    }
-  }
-
-  _handleManualScrollStart() {
-    if (!this.autoResumeTimer && this.state.isPlaying) {
-      this.wasPlayingBeforeManualScroll = true;
-    }
-
-    if (this.state.isPlaying) {
-      this.stop();
-    }
-
-    this._startAutoResumeTimer();
-  }
-
   _handleWheel(event) {
     event.preventDefault();
 
-    this._handleManualScrollStart();
-
     try {
-      if (this.state.mode === 'smooth') {
-        const delta = -Math.sign(event.deltaY) * this.config.scrolling.wheelPixelDelta;
-
-        this.state.scrollOffset += delta;
-
-        this.state.scrollOffset = Math.max(0, Math.min(
-          this.state.scrollOffset,
-          this.metrics.getLastWordCenter()
-        ));
-
-        this.renderer.render(this.state);
-        saveStateDebounced();
-      } else if (this.state.mode === 'sentence') {
+      if (this.state.mode === 'sentence') {
         // Navigate between sentences
         if (event.deltaY > 0) {
           // Scroll down = previous sentence
@@ -1239,82 +1026,6 @@ class WordMarqueeEngine {
       }
     } catch (error) {
       console.error('WordMarqueeEngine: Error handling wheel event', error);
-    }
-  }
-
-  _handleMouseDown(event) {
-    if (event.target.tagName === 'BUTTON') {
-      return;
-    }
-
-    this.dragState.isDragging = true;
-    this.dragState.startX = event.clientX;
-    this.dragState.startScrollOffset = this.state.scrollOffset;
-    this.dragState.startFocusIndex = this.state.focusIndex;
-
-    this.renderer.elements.container.classList.add('dragging');
-
-    this._handleManualScrollStart();
-  }
-
-  _handleMouseMove(event) {
-    if (!this.dragState.isDragging) {
-      return;
-    }
-
-    this._startAutoResumeTimer();
-
-    try {
-      const deltaX = event.clientX - this.dragState.startX;
-
-      if (this.state.mode === 'smooth') {
-        const dragDelta = -deltaX * this.config.scrolling.dragSensitivity;
-
-        this.state.scrollOffset = this.dragState.startScrollOffset + dragDelta;
-
-        this.state.scrollOffset = Math.max(0, Math.min(
-          this.state.scrollOffset,
-          this.metrics.getLastWordCenter()
-        ));
-
-        this.renderer.render(this.state);
-        saveStateDebounced();
-      } else {
-        const wordThreshold = 30;
-        const wordDelta = -Math.floor(deltaX / wordThreshold);
-
-        const newFocusIndex = this.dragState.startFocusIndex + wordDelta;
-
-        const clampedIndex = Math.max(0, Math.min(
-          newFocusIndex,
-          this.metrics.getWordCount() - 1
-        ));
-
-        if (clampedIndex !== this.state.focusIndex) {
-          this.state.focusIndex = clampedIndex;
-          this.renderer.render(this.state);
-          saveStateDebounced();
-        }
-      }
-    } catch (error) {
-      console.error('WordMarqueeEngine: Error handling mouse move', error);
-    }
-  }
-
-  _handleMouseUp(event) {
-    if (!this.dragState.isDragging) {
-      return;
-    }
-
-    this.dragState.isDragging = false;
-
-    this.renderer.elements.container.classList.remove('dragging');
-
-    if (this.state.mode === 'word') {
-      const wordData = this.metrics.getWordPositionData(this.state.focusIndex);
-      if (wordData) {
-        this.state.scrollOffset = wordData.centerPosition;
-      }
     }
   }
 
@@ -1370,30 +1081,16 @@ class WordMarqueeEngine {
 
     if (container) {
       this._addEventListener(container, 'wheel', this._boundHandleWheel, { passive: false });
-      this._addEventListener(container, 'mousedown', this._boundHandleMouseDown);
     }
-
-    this._addEventListener(document, 'mousemove', this._boundHandleMouseMove);
-    this._addEventListener(document, 'mouseup', this._boundHandleMouseUp);
   }
 
   destroy() {
     this.stop();
 
-    if (this.autoResumeTimer) {
-      clearTimeout(this.autoResumeTimer);
-      this.autoResumeTimer = null;
-    }
-
     this.eventListeners.forEach(({ target, event, handler }) => {
       target.removeEventListener(event, handler);
     });
     this.eventListeners = [];
-
-    this.dragState.isDragging = false;
-    if (this.renderer && this.renderer.elements.container) {
-      this.renderer.elements.container.classList.remove('dragging');
-    }
 
     if (this.metrics) {
       this.metrics.clearCache();
@@ -1939,11 +1636,9 @@ function saveState() {
     view: currentView,
     readfast: engine ? {
       mode: engine.state.mode,
-      scrollOffset: engine.state.scrollOffset,
       focusIndex: engine.state.focusIndex,
       sentenceIndex: engine.state.sentenceIndex,
-      wpm: CONFIG.wpm,
-      pps: CONFIG.pps
+      wpm: CONFIG.wpm
     } : null,
     pdf: pdfViewer && pdfViewer.pdfDoc ? {
       currentPage: pdfViewer.currentPage,
@@ -2054,16 +1749,8 @@ function switchView(view, skipSync = false) {
         const estimatedWordIndex = Math.floor(pageProgress * totalWords);
 
         // Update engine position
-        if (engine.state.mode === 'smooth') {
-          const wordData = engine.metrics.getWordPositionData(estimatedWordIndex);
-          if (wordData) {
-            engine.state.scrollOffset = wordData.centerPosition;
-            engine.renderer.render(engine.state);
-          }
-        } else {
-          engine.state.focusIndex = Math.max(0, Math.min(estimatedWordIndex, totalWords - 1));
-          engine.renderer.render(engine.state);
-        }
+        engine.state.focusIndex = Math.max(0, Math.min(estimatedWordIndex, totalWords - 1));
+        engine.renderer.render(engine.state);
       }
     }
 
@@ -2097,10 +1784,7 @@ function switchView(view, skipSync = false) {
     if (pdfViewer && pdfViewer.pdfDoc) {
       // Sync page position and highlight position based on word position (unless skipping)
       if (!skipSync && engine && engine.metrics) {
-        const currentWordIndex = engine.state.mode === 'smooth'
-          ? engine.metrics.getClosestWordIndex(engine.state.scrollOffset)
-          : engine.state.focusIndex;
-
+        const currentWordIndex = engine.state.focusIndex;
         const totalWords = engine.metrics.getWordCount();
         const totalPages = pdfViewer.totalPages;
 
@@ -2315,25 +1999,16 @@ class StateRestoration {
     if (!readfastState || !engine) return;
 
     engine.state.mode = readfastState.mode;
-    engine.state.scrollOffset = readfastState.scrollOffset;
     engine.state.focusIndex = readfastState.focusIndex;
     engine.state.sentenceIndex = readfastState.sentenceIndex || 0;
 
     if (readfastState.wpm) {
       CONFIG.wpm = readfastState.wpm;
     }
-    if (readfastState.pps) {
-      CONFIG.pps = readfastState.pps;
-    }
 
-    this._updateEngineSpeed();
+    engine.updateSpeedUI();
     engine.renderer.updateModeIndicator(engine.state.mode);
     engine.renderer.render(engine.state);
-  }
-
-  _updateEngineSpeed() {
-    engine.pixelsPerMs = CONFIG.pps / 1000;
-    engine.updateSpeedUI();
   }
 
   async _restorePDFState() {
