@@ -464,101 +464,139 @@ class RenderEngine {
   }
 
   render(state) {
-    if (!this.elements.displayArea) {
-      return;
-    }
+    if (!this.elements.displayArea) return;
 
     try {
-      // Handle sentence mode separately
       if (state.mode === 'sentence') {
         this._renderSentenceMode(state);
         return;
       }
 
-      let currentFocusIndex;
-      let globalOffset;
-      let scrollOffset = state.scrollOffset;
-
-      if (state.mode === 'smooth') {
-        currentFocusIndex = 0;
-        let minDistance = Math.abs(scrollOffset - this.metrics.wordPositions[0].centerPosition);
-
-        for (let i = 1; i < this.metrics.wordPositions.length; i++) {
-          const distance = Math.abs(scrollOffset - this.metrics.wordPositions[i].centerPosition);
-          if (distance < minDistance) {
-            minDistance = distance;
-            currentFocusIndex = i;
-          } else {
-            break;
-          }
-        }
-        globalOffset = this.centerX - scrollOffset;
-      } else {
-        currentFocusIndex = state.focusIndex;
-        const focusData = this.metrics.getWordPositionData(currentFocusIndex);
-        if (!focusData) return;
-        scrollOffset = focusData.centerPosition;
-        globalOffset = this.centerX - scrollOffset;
-      }
-
-      const focusWordData = this.metrics.getWordPositionData(currentFocusIndex);
-      if (!focusWordData) return;
-
-      if (this.elements.currentWordAria) {
-        this.elements.currentWordAria.textContent = focusWordData.word;
-      }
-
-      // Update page info
-      this.updatePageInfo(currentFocusIndex);
-
-      const focusLinePastWords = [];
-      const focusLineFutureWords = [];
-
-      for (let i = currentFocusIndex - 1; i >= 0; i--) {
-        const wordData = this.metrics.getWordPositionData(i);
-        if (!wordData) break;
-
-        const x = globalOffset + wordData.startPosition;
-        const width = wordData.width;
-
-        // Stop if word is completely off-screen to the left
-        if (x + width < 0) break;
-
-        focusLinePastWords.unshift({ word: wordData.word, index: i, x });
-      }
-
-      for (let i = currentFocusIndex + 1; i < this.metrics.getWordCount(); i++) {
-        const wordData = this.metrics.getWordPositionData(i);
-        if (!wordData) break;
-
-        const x = globalOffset + wordData.startPosition;
-        const width = wordData.width;
-
-        if (x > this.containerWidth) break;
-
-        focusLineFutureWords.push({ word: wordData.word, index: i, x });
-      }
-
-      const pastLines = this._calculatePastLines(
-        currentFocusIndex - focusLinePastWords.length - 1
-      );
-
-      const futureLines = this._calculateFutureLines(
-        currentFocusIndex + focusLineFutureWords.length + 1
-      );
-
-      const fragment = document.createDocumentFragment();
-
-      this._renderPastLines(fragment, pastLines);
-      this._renderFocusLine(fragment, focusWordData, globalOffset, focusLinePastWords, focusLineFutureWords);
-      this._renderFutureLines(fragment, futureLines);
-
-      this.elements.displayArea.innerHTML = '';
-      this.elements.displayArea.appendChild(fragment);
-
+      const renderData = this._prepareRenderData(state);
+      this._updateAccessibility(renderData.focusWordData);
+      this._renderWordMode(renderData);
     } catch (error) {
       console.error('RenderEngine: Error during render', error);
     }
+  }
+
+  _prepareRenderData(state) {
+    const focusIndex = this._calculateFocusIndex(state);
+    const focusWordData = this.metrics.getWordPositionData(focusIndex);
+
+    if (!focusWordData) {
+      throw new Error('Invalid focus word data');
+    }
+
+    const scrollOffset = state.mode === 'smooth'
+      ? state.scrollOffset
+      : focusWordData.centerPosition;
+
+    const globalOffset = this.centerX - scrollOffset;
+
+    return {
+      focusIndex,
+      focusWordData,
+      globalOffset,
+      scrollOffset
+    };
+  }
+
+  _calculateFocusIndex(state) {
+    if (state.mode === 'word') {
+      return state.focusIndex;
+    }
+
+    return this._findClosestWordIndexToScroll(state.scrollOffset);
+  }
+
+  _findClosestWordIndexToScroll(scrollOffset) {
+    let closestIndex = 0;
+    let minDistance = Math.abs(
+      scrollOffset - this.metrics.wordPositions[0].centerPosition
+    );
+
+    for (let i = 1; i < this.metrics.wordPositions.length; i++) {
+      const distance = Math.abs(
+        scrollOffset - this.metrics.wordPositions[i].centerPosition
+      );
+
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = i;
+      } else {
+        break;
+      }
+    }
+
+    return closestIndex;
+  }
+
+  _updateAccessibility(focusWordData) {
+    if (this.elements.currentWordAria) {
+      this.elements.currentWordAria.textContent = focusWordData.word;
+    }
+  }
+
+  _renderWordMode(renderData) {
+    const { focusIndex, focusWordData, globalOffset } = renderData;
+
+    const visibleWords = this._getVisibleWords(focusIndex, globalOffset);
+    this.updatePageInfo(focusIndex);
+
+    const fragment = document.createDocumentFragment();
+    this._renderPastLines(fragment, visibleWords.pastLines);
+    this._renderFocusLine(fragment, focusWordData, globalOffset, visibleWords.pastOnLine, visibleWords.futureOnLine);
+    this._renderFutureLines(fragment, visibleWords.futureLines);
+
+    this.elements.displayArea.innerHTML = '';
+    this.elements.displayArea.appendChild(fragment);
+  }
+
+  _getVisibleWords(focusIndex, globalOffset) {
+    const pastOnLine = this._getPastWordsOnFocusLine(focusIndex, globalOffset);
+    const futureOnLine = this._getFutureWordsOnFocusLine(focusIndex, globalOffset);
+
+    const pastLines = this._calculatePastLines(focusIndex - pastOnLine.length - 1);
+    const futureLines = this._calculateFutureLines(focusIndex + futureOnLine.length + 1);
+
+    return { pastOnLine, futureOnLine, pastLines, futureLines };
+  }
+
+  _getPastWordsOnFocusLine(focusIndex, globalOffset) {
+    const words = [];
+
+    for (let i = focusIndex - 1; i >= 0; i--) {
+      const wordData = this.metrics.getWordPositionData(i);
+      if (!wordData) break;
+
+      const x = globalOffset + wordData.startPosition;
+      const width = wordData.width;
+
+      if (x + width < 0) break;
+
+      words.unshift({ word: wordData.word, index: i, x });
+    }
+
+    return words;
+  }
+
+  _getFutureWordsOnFocusLine(focusIndex, globalOffset) {
+    const words = [];
+
+    for (let i = focusIndex + 1; i < this.metrics.getWordCount(); i++) {
+      const wordData = this.metrics.getWordPositionData(i);
+      if (!wordData) break;
+
+      const x = globalOffset + wordData.startPosition;
+      const width = wordData.width;
+
+      if (x > this.containerWidth) break;
+
+      words.push({ word: wordData.word, index: i, x });
+    }
+
+    return words;
   }
 
   _calculatePastLines(startIndex) {
@@ -1428,72 +1466,102 @@ class PDFViewer {
   }
 
   async renderPage(pageNumber) {
-    if (!this.pdfDoc || this.isRendering) return;
-    
+    if (!this._canRender()) return;
+
     this.isRendering = true;
     this.stopHighlighting();
-    
+
     try {
       const page = await this.pdfDoc.getPage(pageNumber);
-      
-      // Get FRESH container dimensions
-      const containerWidth = this.container.offsetWidth - 40;
-      const containerHeight = this.container.offsetHeight - 80;
-      
-      if (containerWidth <= 0 || containerHeight <= 0) {
-        console.log('Container hidden, skipping render');
-        this.currentPage = pageNumber;
-        this.isRendering = false;
+      const viewport = this._calculateViewport(page);
+
+      if (!viewport) {
+        this._skipRender(pageNumber);
         return;
       }
-      
-      // Calculate base scale to fit container at zoom level 1
-      const viewport = page.getViewport({ scale: 1 });
-      const scaleX = containerWidth / viewport.width;
-      const scaleY = containerHeight / viewport.height;
-      const baseScale = Math.min(scaleX, scaleY);
-      
-      // Apply zoom on top of base scale
-      const finalScale = baseScale * this.zoomLevel;
-      const scaledViewport = page.getViewport({ scale: finalScale });
-      
-      this.currentScale = finalScale;
-      
-      // Support HiDPI screens
-      const outputScale = window.devicePixelRatio || 1;
-      
-      // Set canvas dimensions
-      this.canvas.width = Math.floor(scaledViewport.width * outputScale);
-      this.canvas.height = Math.floor(scaledViewport.height * outputScale);
-      this.canvas.style.width = Math.floor(scaledViewport.width) + 'px';
-      this.canvas.style.height = Math.floor(scaledViewport.height) + 'px';
-      
-      const transform = outputScale !== 1 
-        ? [outputScale, 0, 0, outputScale, 0, 0] 
-        : null;
-      
-      const renderContext = {
-        canvasContext: this.ctx,
-        transform: transform,
-        viewport: scaledViewport
-      };
-      
-      // Clear canvas before rendering
+
+      this._configureCanvas(viewport);
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-      
-      await page.render(renderContext).promise;
-      await this.renderTextLayer(page, scaledViewport);
-      
-      this.currentPage = pageNumber;
-      this.updatePageInfo();
-      
-      if (typeof window._restoringState === 'undefined' || !window._restoringState) {
-        saveState();
-      }
+
+      await this._renderPageContent(page, viewport);
+      await this.renderTextLayer(page, viewport);
+
+      this._updatePageState(pageNumber);
     } catch (error) {
       console.error('Error rendering page:', error);
     } finally {
       this.isRendering = false;
+    }
+  }
+
+  _canRender() {
+    return this.pdfDoc && !this.isRendering;
+  }
+
+  _calculateViewport(page) {
+    const { width, height } = this._getContainerDimensions();
+
+    if (width <= 0 || height <= 0) {
+      return null;
+    }
+
+    const viewport = page.getViewport({ scale: 1 });
+    const scale = this._calculateOptimalScale(viewport, width, height);
+    this.currentScale = scale;
+
+    return page.getViewport({ scale });
+  }
+
+  _getContainerDimensions() {
+    const PADDING = { horizontal: 40, vertical: 80 };
+    return {
+      width: this.container.offsetWidth - PADDING.horizontal,
+      height: this.container.offsetHeight - PADDING.vertical
+    };
+  }
+
+  _calculateOptimalScale(viewport, containerWidth, containerHeight) {
+    const scaleX = containerWidth / viewport.width;
+    const scaleY = containerHeight / viewport.height;
+    return Math.min(scaleX, scaleY) * this.zoomLevel;
+  }
+
+  _configureCanvas(viewport) {
+    const outputScale = window.devicePixelRatio || 1;
+
+    this.canvas.width = Math.floor(viewport.width * outputScale);
+    this.canvas.height = Math.floor(viewport.height * outputScale);
+    this.canvas.style.width = `${Math.floor(viewport.width)}px`;
+    this.canvas.style.height = `${Math.floor(viewport.height)}px`;
+  }
+
+  async _renderPageContent(page, viewport) {
+    const outputScale = window.devicePixelRatio || 1;
+    const transform = outputScale !== 1
+      ? [outputScale, 0, 0, outputScale, 0, 0]
+      : null;
+
+    const renderContext = {
+      canvasContext: this.ctx,
+      transform,
+      viewport
+    };
+
+    await page.render(renderContext).promise;
+  }
+
+  _skipRender(pageNumber) {
+    console.log('Container hidden, skipping render');
+    this.currentPage = pageNumber;
+    this.isRendering = false;
+  }
+
+  _updatePageState(pageNumber) {
+    this.currentPage = pageNumber;
+    this.updatePageInfo();
+
+    if (!window._restoringState) {
+      saveState();
     }
   }
 
@@ -2192,114 +2260,161 @@ function cleanText(text) {
     .trim();
 }
 
-async function restoreState(savedState) {
-  if (!savedState || !savedState.book) return false;
+// =============================================================================
+// STATE RESTORATION CLASS
+// =============================================================================
 
-  // Set flag to indicate we're restoring state
-  window._restoringState = true;
+class StateRestoration {
+  constructor(savedState) {
+    this.savedState = savedState;
+    this.bookCard = null;
+  }
 
-  try {
-    // Find the book in the list
-    const bookCard = document.querySelector(`.book-card[data-filename="${savedState.book.filename}"]`);
-    if (!bookCard) {
-      console.warn('Saved book not found:', savedState.book.filename);
+  async execute() {
+    window._restoringState = true;
+
+    try {
+      if (!await this._loadBook()) return false;
+
+      await this._restoreReadFastState();
+      await this._restorePDFState();
+      this._restoreUIState();
+      await this._restoreView();
+
+      console.log('State restored successfully');
+      return true;
+    } catch (error) {
+      console.error('Error restoring state:', error);
+      return false;
+    } finally {
       window._restoringState = false;
+    }
+  }
+
+  async _loadBook() {
+    this.bookCard = this._findBookCard();
+
+    if (!this.bookCard) {
+      console.warn('Saved book not found:', this.savedState.book.filename);
       return false;
     }
 
-    // Load the book with saved page number
-    const startPage = savedState.pdf?.currentPage || 1;
-    await selectBook(savedState.book, bookCard, startPage);
+    const startPage = this.savedState.pdf?.currentPage || 1;
+    await selectBook(this.savedState.book, this.bookCard, startPage);
+    return true;
+  }
 
-    // Restore ReadFast state
-    if (savedState.readfast && engine) {
-      engine.state.mode = savedState.readfast.mode;
-      engine.state.scrollOffset = savedState.readfast.scrollOffset;
-      engine.state.focusIndex = savedState.readfast.focusIndex;
-      engine.state.sentenceIndex = savedState.readfast.sentenceIndex || 0;
+  _findBookCard() {
+    return document.querySelector(
+      `.book-card[data-filename="${this.savedState.book.filename}"]`
+    );
+  }
 
-      if (savedState.readfast.wpm) {
-        CONFIG.wpm = savedState.readfast.wpm;
-      }
-      if (savedState.readfast.pps) {
-        CONFIG.pps = savedState.readfast.pps;
-      }
+  async _restoreReadFastState() {
+    const readfastState = this.savedState.readfast;
+    if (!readfastState || !engine) return;
 
-      // Update engine speed
-      engine.pixelsPerMs = CONFIG.pps / 1000;
-      engine.updateSpeedUI();
+    engine.state.mode = readfastState.mode;
+    engine.state.scrollOffset = readfastState.scrollOffset;
+    engine.state.focusIndex = readfastState.focusIndex;
+    engine.state.sentenceIndex = readfastState.sentenceIndex || 0;
 
-      engine.renderer.updateModeIndicator(engine.state.mode);
-      engine.renderer.render(engine.state);
+    if (readfastState.wpm) {
+      CONFIG.wpm = readfastState.wpm;
+    }
+    if (readfastState.pps) {
+      CONFIG.pps = readfastState.pps;
     }
 
-    // Restore PDF state (page was already loaded in selectBook)
-    if (savedState.pdf && pdfViewer && pdfViewer.pdfDoc) {
-      if (savedState.pdf.highlightWPM) {
-        pdfViewer.highlightWPM = savedState.pdf.highlightWPM;
-        const wpmInput = document.getElementById('pdf-wpm-input');
-        if (wpmInput) {
-          wpmInput.value = savedState.pdf.highlightWPM;
-        }
-      }
+    this._updateEngineSpeed();
+    engine.renderer.updateModeIndicator(engine.state.mode);
+    engine.renderer.render(engine.state);
+  }
 
-      if (savedState.pdf.currentHighlightIndex) {
-        pdfViewer.currentHighlightIndex = savedState.pdf.currentHighlightIndex;
-      }
+  _updateEngineSpeed() {
+    engine.pixelsPerMs = CONFIG.pps / 1000;
+    engine.updateSpeedUI();
+  }
 
-      if (savedState.pdf.zoomLevel !== undefined) {
-        pdfViewer.zoomLevel = savedState.pdf.zoomLevel;
-      }
+  async _restorePDFState() {
+    const pdfState = this.savedState.pdf;
+    if (!pdfState || !pdfViewer?.pdfDoc) return;
 
-      // Note: We don't auto-resume highlighting, user must click play
+    this._restorePDFSettings(pdfState);
+  }
+
+  _restorePDFSettings(pdfState) {
+    if (pdfState.highlightWPM) {
+      pdfViewer.highlightWPM = pdfState.highlightWPM;
+      this._updateWPMInput(pdfState.highlightWPM);
     }
 
-    // Restore colors
-    if (savedState.ui) {
-      if (savedState.ui.textColor) {
-        currentTextColor = savedState.ui.textColor;
-        const textColorInput = document.getElementById('text-color');
-        if (textColorInput) {
-          textColorInput.value = currentTextColor;
-        }
-      }
-
-      if (savedState.ui.bgColor) {
-        currentBgColor = savedState.ui.bgColor;
-        const bgColorInput = document.getElementById('bg-color');
-        if (bgColorInput) {
-          bgColorInput.value = currentBgColor;
-        }
-      }
-
-      applyColors();
+    if (pdfState.currentHighlightIndex) {
+      pdfViewer.currentHighlightIndex = pdfState.currentHighlightIndex;
     }
 
-    // Restore view (skip sync to preserve restored positions)
-    if (savedState.view) {
-      switchView(savedState.view, true); // true = skipSync
+    if (pdfState.zoomLevel !== undefined) {
+      pdfViewer.zoomLevel = pdfState.zoomLevel;
+    }
+  }
 
-      // If switching to 'real' view, re-render the PDF page to fix any scaling issues
-      // that may have occurred when the container was hidden
-      if (savedState.view === 'real' && pdfViewer && pdfViewer.pdfDoc) {
-        // Wait for next frame to ensure container is visible and has correct dimensions
-        await new Promise(resolve => requestAnimationFrame(resolve));
-        await pdfViewer.renderPage(pdfViewer.currentPage);
-      }
+  _updateWPMInput(wpm) {
+    const wpmInput = document.getElementById('pdf-wpm-input');
+    if (wpmInput) {
+      wpmInput.value = wpm;
+    }
+  }
+
+  _restoreUIState() {
+    const uiState = this.savedState.ui;
+    if (!uiState) return;
+
+    this._restoreColors(uiState);
+  }
+
+  _restoreColors(uiState) {
+    if (uiState.textColor) {
+      currentTextColor = uiState.textColor;
+      this._updateColorInput('text-color', uiState.textColor);
+    }
+
+    if (uiState.bgColor) {
+      currentBgColor = uiState.bgColor;
+      this._updateColorInput('bg-color', uiState.bgColor);
+    }
+
+    applyColors();
+  }
+
+  _updateColorInput(id, value) {
+    const input = document.getElementById(id);
+    if (input) {
+      input.value = value;
+    }
+  }
+
+  async _restoreView() {
+    const view = this.savedState.view || 'readfast';
+    switchView(view, true);
+
+    if (view === 'real' && pdfViewer?.pdfDoc) {
+      await this._ensurePDFRendered();
     } else {
-      // Save the final state even if view wasn't changed
       saveState();
     }
-
-    console.log('State restored successfully');
-    return true;
-  } catch (error) {
-    console.error('Error restoring state:', error);
-    return false;
-  } finally {
-    // Clear the restoration flag
-    window._restoringState = false;
   }
+
+  async _ensurePDFRendered() {
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    await pdfViewer.renderPage(pdfViewer.currentPage);
+  }
+}
+
+async function restoreState(savedState) {
+  if (!savedState || !savedState.book) return false;
+
+  const restoration = new StateRestoration(savedState);
+  return await restoration.execute();
 }
 
 // =============================================================================
