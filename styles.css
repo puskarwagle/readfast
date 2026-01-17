@@ -1,0 +1,394 @@
+body {
+  margin: 0;
+  padding: 0;
+  background: black;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  overflow: hidden;
+  font-family: Arial, sans-serif;
+}
+
+#books {
+  width: 20%;
+  height: 100vh;
+  background: rgba(255, 255, 255, 0.05);
+  border-right: 2px solid #666;
+  overflow-y: auto;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+#books h2 {
+  color: white;
+  font-size: 18px;
+  margin: 0 0 20px 0;
+  text-align: center;
+}
+
+.books-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.book-card {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid #666;
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 100px;
+}
+
+.book-card:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: #999;
+}
+
+.book-card.active {
+  background: rgba(255, 100, 100, 0.2);
+  border-color: red;
+}
+
+.book-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+  margin-bottom: 4px;
+}
+
+.book-info {
+  text-align: center;
+  width: 100%;
+}
+
+.book-title {
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  line-height: 1.3;
+  width: 100%;
+}
+
+.book-type {
+  color: #888;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.loading-text {
+  color: #999;
+  text-align: center;
+  padding: 40px 20px;
+  font-size: 14px;
+}
+
+#viewer-wrapper {
+  width: 55%;
+  height: 100vh;
+  border-right: 2px solid #666;
+  position: relative;
+}
+
+#main-container {
+  width: 100%;
+  height: 100vh;
+  position: relative;
+  overflow: hidden;
+  cursor: grab;
+  padding: 0 20px;
+  box-sizing: border-box;
+}
+
+#main-container.dragging {
+  cursor: grabbing;
+}
+
+#pdf-container {
+  width: 100%;
+  height: 100vh;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: black;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+#pdf-viewer {
+  position: relative;
+  display: inline-block;
+}
+
+#pdf-canvas {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 80px);
+  object-fit: contain;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+#pdf-text-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1.0;
+  pointer-events: none;
+}
+
+#pdf-text-layer span {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.pdf-highlight-rect {
+  position: absolute;
+  background-color: rgba(0, 100, 255, 0.3);
+  pointer-events: none;
+  z-index: -1;
+}
+
+#pdf-page-info {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: white;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-family: Arial, sans-serif;
+}
+
+#pdf-wpm-control {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: white;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-family: Arial, sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#pdf-wpm-control label {
+  margin: 0;
+  font-weight: bold;
+}
+
+#pdf-wpm-input {
+  width: 80px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid #666;
+  border-radius: 4px;
+  color: white;
+  font-size: 14px;
+  font-family: Arial, sans-serif;
+}
+
+#pdf-wpm-input:focus {
+  outline: none;
+  border-color: #999;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+#display-area {
+  position: absolute;
+  width: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.row {
+  position: absolute;
+  height: 40px;
+  width: 100%;
+  font-family: Arial, sans-serif;
+  font-size: 20px;
+  line-height: 40px;
+  white-space: nowrap;
+}
+
+.word {
+  position: absolute;
+  color: white;
+  transition: color 0.3s ease;
+}
+
+.word.past {
+  color: #999;
+}
+
+.word.future {
+  color: #999;
+}
+
+.middle-letter {
+  color: red;
+  font-weight: bold;
+}
+
+#cursor {
+  display: none;
+}
+
+#measure {
+  position: absolute;
+  visibility: hidden;
+  white-space: nowrap;
+  font-family: Arial, sans-serif;
+  font-size: 20px;
+}
+
+#controls-panel {
+  width: 25%;
+  height: 100vh;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.control-card {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid #666;
+  border-radius: 8px;
+  color: white;
+  font-family: Arial, sans-serif;
+  width: 125px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.control-card h3 {
+  display: none;
+}
+
+.tabs-container {
+  flex-direction: row;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.tab-button {
+  width: 62.5px;
+  height: 100px;
+  font-size: 14px;
+  border-right: 1px solid #666;
+  transition: all 0.3s ease;
+}
+
+.tab-button:last-child {
+  border-right: none;
+}
+
+.tab-button.active {
+  background: rgba(255, 100, 100, 0.2);
+  color: red;
+}
+
+.tab-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.tab-button.active:hover {
+  background: rgba(255, 100, 100, 0.3);
+}
+
+button {
+  background: transparent;
+  color: white;
+  border: none;
+  padding: 0;
+  border-radius: 8px;
+  font-family: Arial, sans-serif;
+  font-size: 24px;
+  cursor: pointer;
+  width: 125px;
+  height: 100px;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Loading Overlay */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  z-index: 1000;
+}
+
+.loading-overlay.active {
+  display: flex;
+}
+
+.loading-spinner {
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top: 4px solid white;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-overlay p {
+  color: white;
+  font-size: 16px;
+}
